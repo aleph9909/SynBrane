@@ -1,5 +1,5 @@
 // Base URL for the backend API.
-// Default to empty string (relative) so Vercel can proxy requests on the same origin.
+// Default to empty string (relative) so the hosting API proxy stays on the same origin.
 // Allow override from window for local development when needed.
 const API_BASE =
   (typeof window !== 'undefined' && window.SYNBRANE_API_BASE) || '';

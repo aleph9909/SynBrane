@@ -6,10 +6,18 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "NODE_ENV=development node server/index.js"
+    "dev": "NODE_ENV=development node server/index.js",
+    "dev:worker": "wrangler dev",
+    "deploy:worker": "wrangler deploy",
+    "test:worker": "node --test test/worker.test.mjs",
+    "check:worker": "wrangler deploy --dry-run",
+    "test:worker:integration": "node test/worker.integration.mjs"
   },
   "keywords": ["music", "tuning", "supercollider", "web"],
   "author": "",
   "license": "MIT",
-  "dependencies": {}
+  "dependencies": {},
+  "devDependencies": {
+    "wrangler": "4.148.0"
+  }
 }
