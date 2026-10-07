@@ -4,9 +4,9 @@ Experimental music workbench for exploring alternative tunings, browsing chords,
 
 ## Architecture and cutover
 
-Cloudflare Workers with Static Assets serves `public/` and proxies same-origin `/api/*` requests to the existing DigitalOcean backend at `http://147.182.251.148:3001`. `worker/index.mjs` is an ES module; the backend remains CommonJS and `npm start` still starts `server/index.js`. There is no frontend build step or synthesis inside the Worker. Browser Web Audio previews, tuning/chord controls, and patch save/load keep their existing implementation.
+Cloudflare Workers with Static Assets serves `public/` and proxies same-origin `/api/*` requests to the existing DigitalOcean backend at `http://147-182-251-148.sslip.io:3001`. `worker/index.mjs` is an ES module; the backend remains CommonJS and `npm start` still starts `server/index.js`. There is no frontend build step or synthesis inside the Worker. Browser Web Audio previews, tuning/chord controls, and patch save/load keep their existing implementation.
 
-This prepares Cloudflare hosting; it does not perform cutover. Keep the existing Vercel deployment (`https://syn-brane.vercel.app`) and its `api/` handlers active until Cloudflare has passed the checks below and you decide to cut over. No DNS or droplet changes are required to test the `workers.dev` site.
+This prepares Cloudflare hosting; it does not perform cutover. Keep the existing Vercel deployment (`https://syn-brane.vercel.app`) and its `api/` handlers active until Cloudflare has passed the checks below and you decide to cut over. The temporary `sslip.io` backend hostname already maps to the droplet, so no owned domain or DNS changes are required to test the `workers.dev` site. The backend must still be reachable on port 3001.
 
 ## Cloudflare dashboard setup
 
@@ -26,11 +26,11 @@ Do this **after this PR has been reviewed and merged into `main` by the owner**,
    | Build environment variable | `NODE_VERSION=24` |
 
    There is no frontend build output directory to configure. `wrangler.jsonc` sets the assets directory to `./public`, binds it as `ASSETS`, and sets the module entry point to `worker/index.mjs`. The checked-in lockfile installs Wrangler; Node 22 or newer is required for this Wrangler version. The explicit Node 24 build setting meets that requirement without changing the backend runtime.
-4. `BACKEND_BASE=http://147.182.251.148:3001` is already included as a **non-secret runtime variable** in `wrangler.jsonc`. No secret or additional dashboard variable is required for the first deployment. It must be an HTTP(S) origin, with no credentials, path prefix, query, or fragment. Change its checked-in value for a persistent backend change; a dashboard-only change may be overwritten on a later deployment.
+4. `BACKEND_BASE=http://147-182-251-148.sslip.io:3001` is already included as a **non-secret runtime variable** in `wrangler.jsonc`. No secret or additional dashboard variable is required for the first deployment. It must be an HTTP(S) origin, with no credentials, path prefix, query, or fragment. Cloudflare Worker subrequests require a hostname, not a numeric IP address. This `sslip.io` hostname resolves to `147.182.251.148` without domain registration or an account. It is a third-party DNS dependency and does not add TLS: the backend hop remains HTTP. If the droplet IP changes, update the embedded IP in the hostname. Local loopback-IP overrides remain valid for local Wrangler development. Change its checked-in value for a persistent backend change; a dashboard-only change may be overwritten on a later deployment.
 5. Select **Save and Deploy**. Open the provided `https://synbrane.<account-subdomain>.workers.dev` URL. `workers_dev: true` explicitly enables this address. Do not add a custom domain or alter DNS until checks pass.
 6. For an already-created Worker, use **Workers & Pages → synbrane → Settings → Builds → Connect** to attach this repository and enter the same settings. The dashboard Worker name must match `synbrane` in Wrangler. Future pushes to the production branch trigger deployment once this integration is connected.
 
-Cloudflare references: [Git-connected Workers setup](https://developers.cloudflare.com/workers/ci-cd/builds/), [static assets binding](https://developers.cloudflare.com/workers/static-assets/binding/), [Worker-first API routing](https://developers.cloudflare.com/workers/static-assets/routing/worker-script/).
+Cloudflare references: [Worker hostname requirement](https://developers.cloudflare.com/workers/platform/known-issues/#fetch-to-ip-addresses), [temporary hostname service](https://sslip.io/), [Git-connected Workers setup](https://developers.cloudflare.com/workers/ci-cd/builds/), [static assets binding](https://developers.cloudflare.com/workers/static-assets/binding/), [Worker-first API routing](https://developers.cloudflare.com/workers/static-assets/routing/worker-script/).
 
 ## Local development
 
@@ -78,7 +78,7 @@ The integration test launches temporary local processes on ports 13001 and 18787
 
 ### Migration validation record (2026-10-06)
 
-Mocked-upstream tests and the real local Worker/Node DSP integration passed, as did Wrangler's deployment dry run. Live requests to both DigitalOcean tuning/chord endpoints returned **502 from the execution environment's network proxy**, reporting `[Errno 111] Connection refused`; no application response was obtained. This does not establish the droplet's operational status from Cloudflare. Live Cloudflare-to-DigitalOcean API/render checks and audible browser/patch checks remain for post-deployment verification. SuperCollider enablement on DigitalOcean has not been verified.
+Mocked-upstream tests and the real local Worker/Node DSP integration passed, as did Wrangler's deployment dry run. Live requests to both DigitalOcean tuning/chord endpoints returned **502 from the execution environment's network proxy**, reporting `[Errno 111] Connection refused`; no application response was obtained. This does not establish the droplet's operational status from Cloudflare. Subsequently, the owner confirmed Node listens on `0.0.0.0:3001`, the local tuning endpoint returns HTTP 200, and the public tuning endpoint loads after allowing TCP 3001 through UFW. The owner also confirmed the tuning endpoint loads through `147-182-251-148.sslip.io`. These owner-reported checks establish backend reachability from their browser; live Cloudflare-to-DigitalOcean API/render checks and audible browser/patch checks remain for post-deployment verification. SuperCollider enablement on DigitalOcean has not been verified.
 
 ## Documentation
 

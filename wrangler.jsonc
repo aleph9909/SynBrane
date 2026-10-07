@@ -11,6 +11,6 @@
     "not_found_handling": "none"
   },
   "vars": {
-    "BACKEND_BASE": "http://147.182.251.148:3001"
+    "BACKEND_BASE": "http://147-182-251-148.sslip.io:3001"
   }
 }
