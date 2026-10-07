@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const { before, after, test } = require("node:test");
 const { spawn } = require("node:child_process");
-const { mkdtemp, rm } = require("node:fs/promises");
+const { mkdtemp, rm, readFile } = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { chromium } = require("playwright");
@@ -295,6 +295,13 @@ test("real rendered WAV uses its own timeline on seek, pause and replay; Stop si
   await page.waitForFunction(() => state.playback?.kind === "render");
   await page.waitForFunction(() => Number.isFinite(player.duration));
   assert.ok(await page.evaluate(() => player.duration >= 16));
+  const downloadPromise = page.waitForEvent('download');
+  await page.click('#downloadRender');
+  const download = await downloadPromise;
+  assert.equal(download.suggestedFilename(), 'synbrane-loop.wav');
+  const wav = await readFile(await download.path());
+  assert.equal(wav.toString('ascii', 0, 4), 'RIFF');
+  assert.equal(wav.toString('ascii', 8, 12), 'WAVE');
   await page.evaluate(() => {
     player.currentTime = 0.9;
   });

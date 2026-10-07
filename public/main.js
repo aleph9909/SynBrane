@@ -54,6 +54,7 @@ const globalArpRate = document.getElementById('globalArpRate');
 const playLoopBtn = document.getElementById('playLoop');
 const stopLoopBtn = document.getElementById('stopLoop');
 const renderLoopBtn = document.getElementById('renderLoop');
+const downloadRenderBtn = document.getElementById('downloadRender');
 const loopChordCountInput = document.getElementById('loopChordCount');
 const statusEl = document.getElementById('status');
 const player = document.getElementById('player');
@@ -877,6 +878,15 @@ function attachControlListeners() {
 
   playLoopBtn.onclick = () => playLoop();
   renderLoopBtn.onclick = () => renderLoop();
+  downloadRenderBtn.onclick = () => {
+    if (!player.getAttribute('src')) return;
+    const link = document.createElement('a');
+    link.href = player.src;
+    link.download = 'synbrane-loop.wav';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
   stopLoopBtn.onclick = () => stopPreview('Stopped');
 
   savePatchBtn.onclick = () => savePatch();
@@ -1479,6 +1489,8 @@ async function renderLoop() {
       state.renderedLoop = { chordCount: payload.sequence.length,
         barDuration: 240 / payload.bpm, totalBars: payload.sequence.length * payload.loopCount };
       player.src = data.file;
+      downloadRenderBtn.disabled = false;
+      downloadRenderBtn.title = 'Download the rendered loop shown in the audio player';
       updateStatus('Render ready');
       player.play().catch(() => updateStatus('Render ready — tap the audio player to listen'));
     } else {

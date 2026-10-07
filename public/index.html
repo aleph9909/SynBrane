@@ -284,10 +284,14 @@
             </details>
           </section>
         </div>
-        <div class="loop-controls">
-          <button id="playLoop">▶ Play loop</button
-          ><button id="stopLoop" class="secondary">■ Stop</button
-          ><button id="renderLoop" class="ghost">Render WAV</button>
+        <div class="loop-controls" role="group" aria-label="Playback, render and download">
+          <button id="playLoop">▶ Play loop</button>
+          <button id="stopLoop" class="secondary">■ Stop</button>
+          <button id="renderLoop" class="ghost">Render WAV</button>
+          <button id="downloadRender" class="ghost" disabled title="Render a loop to download its WAV">Download WAV</button>
+          <div id="renderPreview" class="render-preview">
+            <audio id="player" controls class="hidden" aria-label="Rendered loop playback"></audio>
+          </div>
         </div>
         <div class="note-circle-wrap">
           <div
@@ -321,9 +325,6 @@
             </div>
           </div>
         </details>
-        <div id="renderPreview" class="render-preview">
-          <audio id="player" controls class="hidden"></audio>
-        </div>
         <div class="footer-controls">
           <div class="patch-controls">
             <button id="savePatch" class="ghost">Save patch</button
