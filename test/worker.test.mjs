@@ -6,7 +6,7 @@ const env = { BACKEND_BASE: 'http://backend.test:3001' };
 const req = (path, options) => new Request(`https://synbrane.test${path}`, options);
 const forbiddenFetch = () => { throw new Error('Unexpected upstream fetch'); };
 
-for (const path of ['/api/tunings', '/api/chords?tuningId=edo%3A31&x=a%2Bb&x=two']) {
+for (const path of ['/api/patches', '/api/patches?before=1791374400000-0123456789abcdef01234567', '/api/patches/1791374400000-0123456789abcdef01234567', '/api/tunings', '/api/chords?tuningId=edo%3A31&x=a%2Bb&x=two']) {
   test(`forwards GET and raw query: ${path}`, async () => {
     const response = await handleRequest(req(path), env, async (url, init) => {
       assert.equal(url, env.BACKEND_BASE + path);
@@ -19,7 +19,7 @@ for (const path of ['/api/tunings', '/api/chords?tuningId=edo%3A31&x=a%2Bb&x=two
   });
 }
 
-for (const route of ['play', 'render']) {
+for (const route of ['play', 'render', 'patches']) {
   test(`forwards ${route} body without reserializing`, async () => {
     const body = ' { "sequence": [{"tuningId":"edo:31","degrees":[0,10,18]}], "loopCount": 10 }\n';
     await handleRequest(req(`/api/${route}`, { method: 'POST', body, headers: {
@@ -190,5 +190,20 @@ test('configuration must be an HTTP(S) origin', async () => {
   for (const base of [undefined, 'bad', 'file:///etc', 'https://a.test/api', 'https://user:pass@a.test', 'https://a.test/?x=1']) {
     const response = await handleRequest(req('/api/tunings'), { BACKEND_BASE: base }, forbiddenFetch);
     assert.equal(response.status, 500);
+  }
+});
+
+test('patch collection/item methods and IDs have a closed proxy allowlist', async () => {
+  const id = '1791374400000-0123456789abcdef01234567';
+  for (const [path, method, status, allow] of [
+    ['/api/patches', 'DELETE', 405, 'GET, POST'],
+    [`/api/patches/${id}`, 'POST', 405, 'GET'],
+    [`/api/patches/${id}`, 'DELETE', 405, 'GET'],
+    ['/api/patches/not-an-id', 'GET', 404, null],
+    [`/api/patches/${id}/extra`, 'GET', 404, null],
+  ]) {
+    const response = await handleRequest(req(path, { method }), env, forbiddenFetch);
+    assert.equal(response.status, status);
+    assert.equal(response.headers.get('allow'), allow);
   }
 });

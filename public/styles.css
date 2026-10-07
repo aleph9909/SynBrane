@@ -1008,3 +1008,50 @@ button.secondary {
     line-height: 1.4;
   }
 }
+
+/* Community patches live in a modal so the instrument and spiral stay compact. */
+.patch-controls { display: flex; flex-wrap: wrap; gap: 6px; }
+#patchLibrary {
+  width: min(700px, calc(100% - 24px));
+  max-height: calc(100dvh - 24px);
+  padding: 20px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid #435168;
+  border-radius: 16px;
+  overflow-y: auto;
+}
+#patchLibrary::backdrop { background: #05080dcc; }
+#patchLibrary h2, #patchLibrary h3, #patchLibrary h4, #patchLibrary p { margin: 0; }
+#patchLibrary p { line-height: 1.5; }
+#patchLibrary button { min-height: 44px; }
+#patchLibrary input, #patchLibrary select {
+  width: 100%; min-width: 0; min-height: 44px;
+  padding: 8px 10px; font: inherit; font-size: 16px;
+  color: var(--text); background: var(--bg);
+  border: 1px solid #435168; border-radius: 8px;
+}
+#patchLibrary input[type="file"] { padding: 8px 0; font-size: 12px; }
+#patchLibrary label { display: block; font-size: 13px; line-height: 1.8; }
+#patchLibrary [hidden] { display: none; }
+.library-heading, .library-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.library-heading h2 { font-size: 22px; }
+.library-heading .meta { margin-top: 4px !important; }
+.library-share { margin: 18px 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; }
+.library-share summary { cursor: pointer; min-height: 28px; font-weight: 600; }
+#sharePatchForm { display: grid; gap: 12px; margin-top: 12px; }
+.library-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+#publishPatch { justify-self: start; }
+#sharePatchStatus:empty, #libraryStatus:empty { display: none; }
+#libraryStatus { padding: 12px 0; }
+#patchLibraryList { margin: 8px 0 12px; padding: 0; list-style: none; }
+#patchLibraryList li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--border); }
+#patchLibraryList h4 { margin-bottom: 4px; font-size: 16px; overflow-wrap: anywhere; }
+#patchLibraryList p { overflow-wrap: anywhere; }
+.library-actions { display: flex; align-items: center; gap: 6px; }
+@media (max-width: 600px) {
+  #patchLibrary { padding: 14px; }
+  .library-fields { grid-template-columns: 1fr; gap: 8px; }
+  #patchLibraryList li { grid-template-columns: minmax(0, 1fr); }
+  .library-actions button { flex: 1; }
+}

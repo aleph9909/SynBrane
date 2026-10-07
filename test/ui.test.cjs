@@ -20,6 +20,7 @@ before(async () => {
       HOST: "127.0.0.1",
       SUPER_COLLIDER_ENABLED: "false",
       RENDER_OUTPUT_DIR: renderDir,
+      PATCHES_DIR: path.join(renderDir, "patches"),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -334,4 +335,114 @@ test('Stop cancels a pending render so a late response cannot restart audio', as
   assert.equal(await page.evaluate(() => state.renderedLoop), null);
   assert.equal(await page.locator('#player').isVisible(), false);
   assert.equal(await page.locator('#status').textContent(), 'Stopped');
+});
+
+test('public library shares current sound across sessions and downloads a reusable patch', async t => {
+  const publisher = await openPage(t);
+  await publisher.evaluate(() => {
+    state.bpm = 137;
+    state.loopChordCount = 2;
+    state.chords[0].notes = [1, 8, 14, 25];
+    state.synth.volume = 0.65;
+    state.globalArp.pattern = 'down';
+  });
+  const original = await publisher.evaluate(() => buildPatch());
+  await publisher.click('#sharePatch');
+  await publisher.fill('#sharedPatchName', '<img src=x onerror=alert(1)> Glass');
+  await publisher.fill('#sharedPatchAuthor', 'Spiral artist');
+  await publisher.click('#publishPatch');
+  await publisher.waitForFunction(() => document.getElementById('sharePatchStatus').textContent.startsWith('Published'));
+  const listener = await openPage(t);
+  await listener.click('#openPatchLibrary');
+  await listener.locator('#patchLibraryList li').first().waitFor();
+  assert.equal(await listener.locator('#patchLibraryList h4').first().textContent(), '<img src=x onerror=alert(1)> Glass');
+  assert.equal(await listener.locator('#patchLibraryList img').count(), 0);
+  const downloadPromise = listener.waitForEvent('download');
+  await listener.locator('#patchLibraryList button').filter({ hasText: 'Download' }).first().click();
+  const downloaded = await downloadPromise;
+  assert.deepEqual(JSON.parse(await readFile(await downloaded.path(), 'utf8')), original);
+  await listener.locator('#patchLibraryList button').filter({ hasText: /^Load$/ }).first().click();
+  await listener.waitForFunction(() => !document.getElementById('patchLibrary').open);
+  assert.deepEqual(await listener.evaluate(() => buildPatch()), original);
+  assert.equal(await listener.evaluate(() => state.playback), null);
+});
+
+test('file upload preserves custom mixed-tuning notes; library fits narrow phones and keyboard close', async t => {
+  const page = await openPage(t);
+  const filePatch = await page.evaluate(async () => {
+    await ensureChordPresets('edo:19');
+    const p = buildPatch();
+    p.chords[0] = { ...p.chords[0], tuningId: 'edo:19', notes: [1, 7, 15, 24], preset: state.chordPresets['edo:19'][0].id };
+    p.global.arpeggiator.enabled = false;
+    return p;
+  });
+  await page.click('#sharePatch');
+  await page.fill('#sharedPatchName', 'Nineteen glass');
+  await page.selectOption('#sharedPatchSource', 'file');
+  await page.setInputFiles('#sharedPatchFile', { name: 'nineteen.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(filePatch)) });
+  await page.click('#publishPatch');
+  await page.waitForFunction(() => document.getElementById('sharePatchStatus').textContent.startsWith('Published'));
+  await page.reload();
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'Ready');
+  await page.click('#openPatchLibrary');
+  await page.locator('#patchLibraryList li').first().waitFor();
+  assert.equal(await page.evaluate(() => !!state.chordPresets['edo:19']), false);
+  for (const width of [320, 390, 900]) {
+    await page.setViewportSize({ width, height: 844 });
+    assert.equal(await page.evaluate(() => {
+      const dialog = document.getElementById('patchLibrary');
+      return dialog.scrollWidth <= dialog.clientWidth && dialog.getBoundingClientRect().width <= innerWidth;
+    }), true, `library overflows at ${width}`);
+  }
+  await page.getByRole('button', { name: 'Load Nineteen glass', exact: true }).click();
+  await page.waitForFunction(() => !document.getElementById('patchLibrary').open);
+  assert.deepEqual(await page.evaluate(() => buildPatch()), filePatch);
+  await page.click('#openPatchLibrary');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#patchLibrary').isVisible(), false);
+});
+
+test('library reports upload errors and failed requests without changing the sound', async t => {
+  const page = await openPage(t);
+  const original = await page.evaluate(() => buildPatch());
+  await page.click('#sharePatch');
+  await page.fill('#sharedPatchName', 'Broken file');
+  await page.selectOption('#sharedPatchSource', 'file');
+  await page.setInputFiles('#sharedPatchFile', { name: 'broken.json', mimeType: 'application/json', buffer: Buffer.from('{broken') });
+  await page.click('#publishPatch');
+  await page.waitForFunction(() => document.getElementById('sharePatchStatus').textContent.includes('valid JSON'));
+  assert.equal(await page.locator('#publishPatch').isEnabled(), true);
+  await page.route('**/api/patches', route => route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"Library offline"}' }));
+  await page.click('#refreshPatchLibrary');
+  await page.waitForFunction(() => document.getElementById('libraryStatus').textContent === 'Library offline');
+  assert.deepEqual(await page.evaluate(() => buildPatch()), original);
+});
+
+test('closing the library cancels a pending load; tuning failures never change the instrument', async t => {
+  const page = await openPage(t);
+  const original = await page.evaluate(() => buildPatch());
+  const input = structuredClone(original);
+  const presets = await (await fetch(`${origin}/api/chords?tuningId=edo:19`)).json();
+  input.chords[0] = { ...input.chords[0], tuningId: 'edo:19', preset: presets.chords[0].id, notes: [0, 6, 11] };
+  const upload = await fetch(`${origin}/api/patches`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Pending nineteen', patch: input }) });
+  assert.equal(upload.status, 201);
+  const entry = (await upload.json()).patch;
+  const record = await (await fetch(`${origin}/api/patches/${entry.id}`)).json();
+  let pending;
+  const requested = new Promise(resolve => page.route(`**/api/patches/${entry.id}`, route => { pending = route; resolve(); }));
+  await page.click('#openPatchLibrary');
+  await page.getByRole('button', { name: 'Load Pending nineteen', exact: true }).click();
+  await requested;
+  await page.keyboard.press('Escape');
+  await pending.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(record) });
+  await page.waitForFunction(() => [...document.querySelectorAll('#patchLibraryList button')].every(b => !b.disabled));
+  assert.deepEqual(await page.evaluate(() => buildPatch()), original);
+  await page.unroute(`**/api/patches/${entry.id}`);
+  await page.evaluate(() => { delete state.chordPresets['edo:19']; });
+  await page.route('**/api/chords?tuningId=edo%3A19', route => route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"offline"}' }));
+  await page.click('#openPatchLibrary');
+  await page.getByRole('button', { name: 'Load Pending nineteen', exact: true }).click();
+  await page.waitForFunction(() => document.getElementById('libraryStatus').textContent.includes('Could not load the patch tuning'));
+  assert.deepEqual(await page.evaluate(() => buildPatch()), original);
 });

@@ -54,11 +54,14 @@ export async function handleRequest(request, env, fetchUpstream = fetch) {
   if (url.pathname !== '/api' && !url.pathname.startsWith('/api/')) {
     return env.ASSETS.fetch(request);
   }
-  const method = METHODS.get(url.pathname);
-  if (!method) return error(404, 'Unknown API route');
-  if (request.method !== method) {
-    return error(405, 'Method not allowed', { Allow: method });
+  const patchItem = /^\/api\/patches\/\d{13}-[a-f0-9]{24}$/.test(url.pathname);
+  const allowed = url.pathname === '/api/patches' ? ['GET', 'POST']
+    : patchItem ? ['GET'] : METHODS.has(url.pathname) ? [METHODS.get(url.pathname)] : [];
+  if (!allowed.length) return error(404, 'Unknown API route');
+  if (!allowed.includes(request.method)) {
+    return error(405, 'Method not allowed', { Allow: allowed.join(', ') });
   }
+  const method = request.method;
 
   let origin;
   try {

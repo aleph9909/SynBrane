@@ -327,6 +327,8 @@
         </details>
         <div class="footer-controls">
           <div class="patch-controls">
+            <button id="openPatchLibrary" class="ghost">Patch library</button>
+            <button id="sharePatch" class="ghost">Share patch</button>
             <button id="savePatch" class="ghost">Save patch</button
             ><button id="loadPatch" class="ghost">Load patch</button
             ><input
@@ -340,6 +342,31 @@
         </div>
       </section>
     </main>
+    <dialog id="patchLibrary" aria-labelledby="libraryTitle">
+      <div class="library-heading">
+        <div><h2 id="libraryTitle">Patch library</h2><p class="meta">Sounds shared by the community</p></div>
+        <button id="closePatchLibrary" class="ghost" aria-label="Close patch library">Close</button>
+      </div>
+      <details id="sharePatchDetails" class="library-share">
+        <summary>Share a patch</summary>
+        <form id="sharePatchForm">
+          <p class="meta">Uploads are public. Anyone can load or download them.</p>
+          <div class="library-fields">
+            <label>Patch name<input id="sharedPatchName" required maxlength="80" autocomplete="off" placeholder="Name your sound" /></label>
+            <label>Artist <span class="meta">(optional)</span><input id="sharedPatchAuthor" maxlength="40" autocomplete="off" placeholder="Your name or alias" /></label>
+          </div>
+          <label>Source<select id="sharedPatchSource"><option value="current">Current sound</option><option value="file">Saved patch file</option></select></label>
+          <label id="sharedPatchFileLabel" hidden>JSON patch · up to 16 KiB<input id="sharedPatchFile" type="file" accept=".json,application/json" /></label>
+          <button id="publishPatch" type="submit">Publish patch</button>
+          <p id="sharePatchStatus" class="meta" role="status"></p>
+        </form>
+      </details>
+      <div class="library-toolbar"><h3>Latest patches</h3><button id="refreshPatchLibrary" class="ghost">Refresh</button></div>
+      <p id="libraryStatus" class="meta" role="status"></p>
+      <ul id="patchLibraryList" aria-label="Shared patches"></ul>
+      <button id="morePatches" class="ghost" hidden>Load more</button>
+    </dialog>
     <script src="/main.js"></script>
+    <script src="/patch-library.js"></script>
   </body>
 </html>
