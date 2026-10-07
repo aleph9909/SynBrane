@@ -191,6 +191,12 @@ function getDegreeSpan(tuning) {
   return tuning.intervals?.length || tuning.count || 12;
 }
 
+function displayedDegreeNumber(tuning, degree) {
+  const span = getDegreeSpan(tuning);
+  const withinOctave = ((degree % span) + span) % span;
+  return withinOctave + (isTwelveEdo(tuning) ? 1 : 0);
+}
+
 function degreeLabel(tuning, degree, root = 0) {
   const span = getDegreeSpan(tuning);
   const wrappedDegree = ((degree % span) + span) % span;
@@ -414,7 +420,10 @@ function renderRootOptions() {
   rootEntries.forEach((rootOption) => {
     const opt = document.createElement('option');
     opt.value = rootOption.value;
-    opt.textContent = rootOption.label || degreeLabel(tuning, rootOption.value, rootOption.value);
+    const name = rootOption.label || degreeLabel(tuning, rootOption.value, rootOption.value);
+    opt.textContent = isTwelveEdo(tuning)
+      ? `${name} · ${displayedDegreeNumber(tuning, rootOption.value)}°`
+      : name;
     chordRoot.appendChild(opt);
   });
   chordRoot.value = chord.root || 0;
@@ -568,7 +577,8 @@ function buildSpiral(tuning) {
     point.style.setProperty('--bubble-shadow', palette.shadow);
     point.style.setProperty('--bubble-outline', palette.outline);
     point.style.setProperty('--note-transform', `translate(${x}px, ${y}px) translate(-50%, -50%)`);
-    point.title = `Degree ${degreeInOctave} (oct +${octaveIndex})`;
+    const noteName = isTwelveEdo(tuning) ? ` · ${NOTE_NAMES_12[degreeInOctave]}` : '';
+    point.title = `Degree ${displayedDegreeNumber(tuning, degreeInOctave)}${noteName} (oct +${octaveIndex})`;
     point.setAttribute('aria-label', point.title);
     point.textContent = degreeLabel(tuning, degreeInOctave, chord.root || 0);
     point.onclick = () => {
@@ -636,11 +646,16 @@ function renderIntervalPanels() {
   sorted.forEach((degree, idx) => {
     const offset = degree - (chord.root || 0);
     const cents = centsForDegree(tuning, offset);
-    const label = degreeLabel(tuning, degree, chord.root || 0);
+    const noteLabel = degreeLabel(tuning, degree, chord.root || 0);
+    const label = isTwelveEdo(tuning)
+      ? `${noteLabel} (degree ${displayedDegreeNumber(tuning, degree)})`
+      : noteLabel;
     const name = intervalLabelByIndex(idx);
     infoLines.push(`${name}: ${label} (${cents.toFixed(1)}¢ from root)`);
     const freq = degreeToFrequency(chord.tuningId, degree).toFixed(2);
-    const steps = tuning?.type === 'edo' ? `${offset} steps` : `${offset}°`;
+    const steps = isTwelveEdo(tuning)
+      ? `${offset} semitones from root`
+      : tuning?.type === 'edo' ? `${offset} steps` : `${offset}°`;
     freqLines.push(`${label}: ${freq} Hz (${steps})`);
   });
   intervalInfo.textContent = infoLines.join('\n') || 'Pick notes to see intervals.';
