@@ -1,7 +1,7 @@
 # SynBrane project context
 
 ## Overview
-SynBrane is an experimental music tool pairing a lightweight browser UI with a Node.js backend. The browser now focuses on a streamlined two-panel layout: a **Chords** box for editing up to five loop chords (one at a time) using a circular note selector, and a **Synth Parameters** box for global playback controls and patch management. Chord edits are sent to the backend/audio engine for live playback or WAV renders. The top of the page carries a cyberpunk-style ASCII "SynBrane" banner above the subtitle.
+SynBrane is an experimental music tool pairing a lightweight browser UI with a Node.js backend. The instrument defaults to **ARP** and **12-EDO Chromatic**, with a prominent ARP / CHORD radio switch. A compact shared editor sits above the three-octave spiral: Chord settings and Synth controls are side by side on desktop and one-tap tabs on mobile. The spiral remains below the same editor area in either mobile tab. Chord edits are sent to the audio engine for browser playback or WAV renders. The top of the page carries the cyberpunk-style ASCII "SynBrane" banner.
 The header includes a simple link to a dedicated About page (`/about.html`) with centered copy that walks through how SynBrane works across harmony and rhythm modes, looping, patching, and supported tunings.
 
 The About link now sits beneath the subtitle, aligned to the right so it no longer overlaps the ASCII banner.
@@ -9,11 +9,12 @@ The About link now sits beneath the subtitle, aligned to the right so it no long
 ## Architecture
 - **Frontend** (`public/`)
   - Plain HTML/CSS/JS served statically by Cloudflare Workers Static Assets after cutover, locally by the Node server or Wrangler. The existing Vercel site remains available until the owner completes cutover.
-  - Chords panel: up to five chord tabs, with the visible count controlled by a "Chords in loop" selector. Each chord stores its own tuning, root, notes, and preset on a multi-octave spiral picker covering three visible octaves (0–2) for the current temperament rather than any circle-of-fifths ordering. The picker uses compact degree labels with a ° symbol (e.g., `7°`) that start at 1 for non-12-EDO tunings, spacing tuned for dense temperaments like 31-EDO, and temperament-specific color themes with subdued inactive bubbles and high-contrast highlighted selections. Preset chords are fetched per tuning from the backend (universal ratios plus temperament-specific sets) and applied by degree, and users can still toggle any point afterward. Root selectors track degree names per temperament. Interval and frequency readouts explain the chosen notes (cents/steps from root, Hz). A per-chord preview loop toggle stays in this panel while arpeggiation moved to global controls.
-  - Synth Parameters panel: compact controls for mode (Harmony/Rhythm), tempo, rhythm multiplier, waveform, master volume, ADSR, filter settings, and loop chord count. The rhythm slider now ranges from roughly 0.1–1.0× (default ~0.3×) for subtle timing shifts instead of fast multipliers. A gentle detune control smooths polyphonic previews for dense temperaments. Patch Save/Load controls sit at the top of the panel for quick access, with master volume pinned ahead of the remaining synth sliders. The rendered loop audio player now sits directly beneath the Render Loop button in the chords panel for immediate access where the render is triggered.
-  - Global arpeggiator: a switch-style toggle lives alongside the chord dropdowns so it is visible while setting tunings and presets. When flipped on it applies one pattern/rate to all chords, and the same settings drive both chord previews and loop playback/renders.
+  - Chord controls: a prominent 1–4 chord count selector and numbered chord buttons. Blue marks the chord being edited; a separate green play marker and "Chord N of M" readout follow the Web Audio clock or rendered player's currentTime. Editing a chord never moves the playhead. Changing loop length or ARP / CHORD during a browser loop restarts it with the new settings. Legacy five-chord patches retain all five chords and expose a fifth count option only when loaded.
+  - Chord settings: compact temperament/root, preset, and arp pattern/rate controls. New/unset chords prefer 12-EDO by id/type, independent of API ordering. The preserved three-octave spiral is responsive down to 320px screens and its note buttons support keyboard access. Chord preview/repeat, copy, and clear sit beneath it; interval/frequency readouts are in a disclosure below.
+  - Synth controls: waveform, tempo, volume, and cutoff are available in the shared editor above the spiral. More synth controls exposes ADSR, resonance, detune, Harmony/Rhythm engine, and rhythm multiplier. Volume adjusts live; other sound edits apply on next Play. The ARP / CHORD switch selects Harmony; Rhythm remains available in the sound-engine select. Selecting CHORD explicitly overrides legacy per-chord arp flags.
+  - Playback: an animation frame reads the audio clock rather than counting wall-clock timeouts; Stop, completion, and patch load clear the marker. WAV seek/pause/replay uses a saved rendering timeline. New playback cancels stale render responses. Save/Load and the rendered audio player sit beneath the spiral.
 - Patch system: Save downloads a JSON file carrying global mode/tempo/rhythm/synth (including master volume)/preview/global arpeggiator plus per-chord tuning, root, preset id, notes, and the loop chord count. Load applies a JSON patch and updates the UI; rhythm multipliers are clamped to the current slider range when loading.
-  - Loop playback/render: builds a loop-length-limited (1–5 chords) sequence (one bar per visible chord) with explicit tuning ids, full degree lists, per-event arpeggiator settings (both structured and pattern/rate flags), and derived frequencies. The resulting payload is reused verbatim by both the Web Audio loop preview path and `/api/render`, so previews and renders share identical timing, synth/rhythm settings, and 10-loop length.
+  - Loop playback/render: builds a loop-length-limited (1–4 chords, or 5 for legacy patches) sequence (one bar per visible chord) with explicit tuning ids, full degree lists, per-event arpeggiator settings (both structured and pattern/rate flags), and derived frequencies. The resulting payload is reused verbatim by both the Web Audio loop preview path and `/api/render`, so previews and renders share identical timing, synth/rhythm settings, and 10-loop length.
 
 - **Backend** (`server/`)
   - Minimal HTTP server exposing REST endpoints:
@@ -89,8 +90,7 @@ On 2026-10-06 the mocked tests, real local Worker + Node DSP render integration,
 - 31-EDO now carries richer temperaments derived from Orwell-9 and Mothra-6 shapes (nonets, hexads, neutral dominants, blues stacks, and extended 11ths) alongside the existing meantone sets, so Orwell flavors live inside the 31-EDO option instead of a standalone 9-EDO entry.
 
 ## UI controls
-  - Chords panel: configurable tab count (1–5) based on the loop length selector, active chord label, per-chord tuning select, root selector, chord preset dropdown (major/minor/dim/aug/sus/add chords), loop toggle, a quick action row directly beneath the chord dropdowns with Clear, Play chord, and Copy to next chord buttons, loop Play/Stop/Render controls just above the spiral note selector with toggleable degrees, interval/frequency readouts, and a global arpeggiator switch with pattern/rate selects that apply to all chords, previews, and loops. Root dropdowns use zero-based degree labels (e.g., Degree 0) for non-12-EDO temperaments to match the spiral numbering, and chord preset labels keep zero-based degrees for those tunings while 12-EDO presets omit numeric degree hints (note names only in the dropdown).
-  - Synth Parameters: master volume leads the panel, followed by mode (harmony/rhythm), tempo (30–300 BPM), rhythm multiplier (~0.1–1.0), waveform, attack/decay/sustain/release, detune, cutoff/resonance, loop length selector, and patch Save/Load.
+- See the frontend architecture notes above for control placement. Fresh sessions use four chords, ARP enabled, and 12-EDO Chromatic. Patch loading retains explicit tuning and mode settings, including CHORD/off. Patches without global arpeggiator settings derive them from legacy chord flags, defaulting off rather than inheriting the fresh-session ARP default.
 - Patch JSON shape (v1):
 ```
 {
@@ -101,7 +101,7 @@ On 2026-10-06 the mocked tests, real local Worker + Node DSP render integration,
       "tempo": 120,
       "rhythmMultiplier": 0.3,
     "synth": { "waveform": "saw", "envelope": { ... }, "filter": { ... }, "detuneCents": 3, "volume": 1 },
-    "arpeggiator": { "enabled": false, "pattern": "up", "rate": "1/8" },
+    "arpeggiator": { "enabled": true, "pattern": "up", "rate": "1/8" },
     "preview": { "arpeggiate": false, "arpRateMs": 180, "loop": false }
   },
   "chords": [
@@ -135,3 +135,7 @@ Chord-level `arp` objects remain in saved patches for backward compatibility, bu
 - `npm run test:worker` — Run focused mocked-upstream tests.
 - `npm run test:worker:integration` — Run the real local Worker/backend/static/WAV smoke checks.
 - `npm run check:worker` — Validate/bundle with `wrangler deploy --dry-run`, without deployment.
+
+### Frontend UI verification
+
+Run `npm ci`, `npx playwright install chromium`, then `npm run test:ui`. The browser suite starts its own local Node backend, uses temporary render storage, and checks defaults/mode overrides, 1–4 chord scheduling, audio-clock markers, patch compatibility, 320–1280px layouts, and a real Node DSP WAV including seek/pause/replay. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to an existing Chromium executable if needed; `TEST_UI_PORT` defaults to 13002. No deployed service is used.

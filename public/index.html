@@ -13,7 +13,7 @@
       // window.SYNBRANE_API_BASE = "http://localhost:3001";
     </script>
   </head>
-  <body>
+  <body class="instrument-page">
     <header>
       <div class="header-inner">
         <div class="ascii-banner" aria-hidden="true">
@@ -29,85 +29,287 @@
           </pre>
         </div>
       </div>
-      <p class="meta header-subtitle">Five-chord loop editor with quick synth controls.</p>
+      <p class="meta header-subtitle">Spiral notes. Shape sound.</p>
       <div class="header-actions">
         <a class="about-trigger" href="/about.html">About</a>
       </div>
     </header>
     <main>
-      <section class="panel" id="chordsPanel">
-        <div class="panel-header">
-          <h2>Chords</h2>
-          <div class="chord-switcher" id="chordSwitcher"></div>
-        </div>
-        <div class="active-chord-label" id="activeChordLabel">Chord 1</div>
-        <div class="chord-controls">
-          <label>
-            Tuning
-            <select id="chordTuning"></select>
+      <section
+        class="panel instrument"
+        id="chordsPanel"
+        aria-label="Spiral instrument"
+      >
+        <fieldset class="performance-mode">
+          <legend>Play mode</legend>
+          <div class="segmented mode-switch">
+            <label
+              ><input
+                type="radio"
+                name="playMode"
+                id="arpMode"
+                value="arp"
+                checked
+              /><span>ARP <small>One note at a time</small></span></label
+            >
+            <label
+              ><input
+                type="radio"
+                name="playMode"
+                id="chordMode"
+                value="chord"
+              /><span>CHORD <small>All notes together</small></span></label
+            >
+          </div>
+        </fieldset>
+        <div class="loop-heading">
+          <h2>Loop</h2>
+          <label class="loop-length"
+            >Chords
+            <select id="loopChordCount" aria-label="Chords in loop">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4" selected>4</option>
+              <option value="5" id="legacyChordCount" hidden>
+                5 (loaded patch)
+              </option>
+            </select>
           </label>
-          <div class="control-grid chord-grid">
-            <label>
-              Root
-              <select id="chordRoot"></select>
-            </label>
-            <label>
-              Chord preset
-              <select id="chordPreset"></select>
-            </label>
-            <div class="arp-block global-arp">
-              Global arpeggiator
-              <div class="toggle-row">
-                <label class="switch" aria-label="Toggle global arpeggiator">
-                  <input type="checkbox" id="globalArpEnabled" role="switch" aria-checked="false" />
-                  <span class="slider" aria-hidden="true"></span>
-                </label>
-                <span class="meta">All chords, previews, and loops</span>
-              </div>
-              <div class="inline-control">
-                <span class="meta">Pattern</span>
-                <select id="globalArpPattern">
+          <div
+            id="nowPlaying"
+            class="now-playing"
+            role="status"
+            aria-live="polite"
+          >
+            Ready to play
+          </div>
+        </div>
+        <div
+          class="chord-switcher"
+          id="chordSwitcher"
+          role="group"
+          aria-label="Choose chord to edit"
+        ></div>
+        <div class="editor-tabs" role="group" aria-label="Editor controls">
+          <button
+            id="showChordSettings"
+            class="active"
+            aria-pressed="true"
+            aria-controls="chordSettings"
+          >
+            Chord settings
+          </button>
+          <button
+            id="showSynthSettings"
+            aria-pressed="false"
+            aria-controls="synthPanel"
+          >
+            Synth controls
+          </button>
+        </div>
+        <div class="editor-grid" id="editorGrid" data-editor="chord">
+          <section
+            id="chordSettings"
+            class="chord-settings"
+            aria-labelledby="activeChordLabel"
+          >
+            <h3 class="active-chord-label" id="activeChordLabel">
+              Editing chord 1
+            </h3>
+            <div class="control-grid chord-grid">
+              <label>Temperament<select id="chordTuning"></select></label>
+              <label>Root<select id="chordRoot"></select></label>
+              <label class="wide-control"
+                >Chord preset<select id="chordPreset"></select
+              ></label>
+            </div>
+            <div class="control-grid arp-settings" id="arpSettings">
+              <label
+                >Arp pattern<select id="globalArpPattern">
                   <option value="up">Up</option>
                   <option value="down">Down</option>
                   <option value="updown">Up &amp; Down</option>
                   <option value="random">Random</option>
-                </select>
-              </div>
-              <div class="inline-control">
-                <span class="meta">Rate</span>
-                <select id="globalArpRate">
+                </select></label
+              >
+              <label
+                >Rate<select id="globalArpRate">
                   <option value="1/4">1/4</option>
                   <option value="1/8" selected>1/8</option>
                   <option value="1/8T">1/8T</option>
                   <option value="1/16">1/16</option>
-                </select>
-              </div>
+                </select></label
+              >
             </div>
-            <label>
-              Loop chord
-              <div class="inline-control">
-                <input type="checkbox" id="loopChord" />
-                <span class="meta">Repeat preview</span>
+          </section>
+          <section
+            class="quick-synth"
+            id="synthPanel"
+            aria-labelledby="synthHeading"
+          >
+            <h3 id="synthHeading">Synth</h3>
+            <div class="control-grid quick-synth-grid">
+              <label
+                >Waveform<select id="waveform">
+                  <option value="sine">Sine</option>
+                  <option value="saw" selected>Saw</option>
+                  <option value="square">Square</option>
+                </select></label
+              >
+              <label
+                ><span class="parameter-label"
+                  >Tempo <output id="bpmLabel">120 BPM</output></span
+                ><input
+                  id="bpm"
+                  type="range"
+                  min="30"
+                  max="300"
+                  value="120"
+                  step="1"
+              /></label>
+              <label
+                ><span class="parameter-label"
+                  >Volume <output id="volumeLabel">1.00×</output></span
+                ><input
+                  id="volume"
+                  type="range"
+                  min="0"
+                  max="1.5"
+                  step="0.01"
+                  value="1"
+              /></label>
+              <label
+                ><span class="parameter-label"
+                  >Cutoff <output id="cutoffLabel">12000 Hz</output></span
+                ><input
+                  id="cutoff"
+                  type="range"
+                  min="500"
+                  max="15000"
+                  step="50"
+                  value="12000"
+              /></label>
+            </div>
+            <details class="synth-details">
+              <summary>
+                More synth controls <span>Envelope · resonance · detune</span>
+              </summary>
+              <div class="control-grid synth-grid">
+                <label
+                  ><span class="parameter-label"
+                    >Attack <output id="attackLabel">40 ms</output></span
+                  ><input
+                    id="attack"
+                    type="range"
+                    min="0"
+                    max="1000"
+                    value="40"
+                /></label>
+                <label
+                  ><span class="parameter-label"
+                    >Decay <output id="decayLabel">200 ms</output></span
+                  ><input
+                    id="decay"
+                    type="range"
+                    min="0"
+                    max="1000"
+                    value="200"
+                /></label>
+                <label
+                  ><span class="parameter-label"
+                    >Sustain <output id="sustainLabel">0.70</output></span
+                  ><input
+                    id="sustain"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value="0.7"
+                /></label>
+                <label
+                  ><span class="parameter-label"
+                    >Release <output id="releaseLabel">800 ms</output></span
+                  ><input
+                    id="release"
+                    type="range"
+                    min="0"
+                    max="2000"
+                    value="800"
+                /></label>
+                <label
+                  ><span class="parameter-label"
+                    >Detune <output id="detuneLabel">3.0¢</output></span
+                  ><input
+                    id="detune"
+                    type="range"
+                    min="0"
+                    max="15"
+                    step="0.5"
+                    value="3"
+                /></label>
+                <label
+                  ><span class="parameter-label"
+                    >Resonance <output id="resonanceLabel">0.20</output></span
+                  ><input
+                    id="resonance"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value="0.2"
+                /></label>
+                <label
+                  >Sound engine<select id="modeSelect">
+                    <option value="harmony">Harmony</option>
+                    <option value="rhythm">Rhythm</option>
+                  </select></label
+                >
+                <label
+                  ><span class="parameter-label"
+                    >Rhythm × <output id="rhythmLabel">0.30×</output></span
+                  ><input
+                    id="rhythmSpeed"
+                    type="range"
+                    min="0.1"
+                    max="1.0"
+                    step="0.01"
+                    value="0.3"
+                /></label>
               </div>
-            </label>
+              <p class="meta">
+                Sound changes apply on the next Play; volume adjusts live. ARP /
+                CHORD selects the Harmony engine.
+              </p>
+            </details>
+          </section>
+        </div>
+        <div class="loop-controls">
+          <button id="playLoop">▶ Play loop</button
+          ><button id="stopLoop" class="secondary">■ Stop</button
+          ><button id="renderLoop" class="ghost">Render WAV</button>
+        </div>
+        <div class="note-circle-wrap">
+          <div
+            class="note-circle"
+            id="noteCircle"
+            role="group"
+            aria-label="Spiral note sequencer"
+          ></div>
+          <div class="circle-hint">
+            Tap the spiral to toggle notes · 3 octaves
           </div>
-          <div class="chord-actions">
-            <button id="clearChord">Clear</button>
-            <button id="playActiveChord">Play chord</button>
-            <button id="copyChord">Copy to next chord</button>
-          </div>
-          <div class="loop-controls">
-            <button id="playLoop">Play Loop</button>
-            <button id="stopLoop" class="ghost">Stop</button>
-            <button id="renderLoop">Render Loop</button>
-          </div>
-          <div id="renderPreview" class="render-preview">
-            <audio id="player" controls class="hidden"></audio>
-          </div>
-          <div class="note-circle-wrap">
-            <div class="note-circle" id="noteCircle"></div>
-            <div class="circle-hint">Tap to toggle notes.</div>
-          </div>
+        </div>
+        <div class="chord-actions">
+          <button id="playActiveChord" class="secondary">Play chord</button>
+          <button id="copyChord" class="ghost">Copy to next</button
+          ><button id="clearChord" class="ghost">Clear</button>
+          <label class="repeat-preview"
+            ><input type="checkbox" id="loopChord" />Repeat chord</label
+          >
+        </div>
+        <details class="note-details">
+          <summary>Chord info <span>Intervals · frequencies</span></summary>
           <div class="chord-insights">
             <div>
               <h3>Intervals</h3>
@@ -118,146 +320,25 @@
               <div class="interval-list" id="frequencyInfo"></div>
             </div>
           </div>
+        </details>
+        <div id="renderPreview" class="render-preview">
+          <audio id="player" controls class="hidden"></audio>
         </div>
-      </section>
-
-      <section class="panel" id="synthPanel">
-        <div class="panel-header">
-          <h2>Synth Parameters</h2>
-        </div>
-        <div class="primary-controls">
+        <div class="footer-controls">
           <div class="patch-controls">
-            <button id="savePatch">Save Patch</button>
-            <button id="loadPatch">Load Patch</button>
-            <input
+            <button id="savePatch" class="ghost">Save patch</button
+            ><button id="loadPatch" class="ghost">Load patch</button
+            ><input
               id="patchFile"
               type="file"
               accept="application/json"
               class="hidden"
             />
           </div>
+          <div id="status" class="meta" role="status"></div>
         </div>
-        <div class="control-grid top-params">
-          <label>
-            Master volume
-            <input id="volume" type="range" min="0" max="1.5" step="0.01" value="1" />
-            <span class="meta" id="volumeLabel">1.00×</span>
-          </label>
-        </div>
-        <div class="control-grid">
-          <label>
-            Mode
-            <select id="modeSelect">
-              <option value="harmony">Harmony</option>
-              <option value="rhythm">Rhythm</option>
-            </select>
-          </label>
-          <label>
-            Chords in loop
-            <input id="loopChordCount" type="number" min="1" max="5" value="4" />
-          </label>
-          <label>
-            Tempo
-            <input
-              id="bpm"
-              type="range"
-              min="30"
-              max="300"
-              value="120"
-              step="1"
-            />
-            <span class="meta" id="bpmLabel">120 BPM</span>
-          </label>
-          <label>
-            Rhythm ×
-            <input
-              id="rhythmSpeed"
-              type="range"
-              min="0.1"
-              max="1.0"
-              step="0.01"
-              value="0.3"
-            />
-            <span class="meta" id="rhythmLabel">0.30×</span>
-          </label>
-        </div>
-        <div class="control-grid synth-grid">
-          <label>
-            Waveform
-            <select id="waveform">
-              <option value="sine">Sine</option>
-              <option value="saw" selected>Saw</option>
-              <option value="square">Square</option>
-            </select>
-          </label>
-          <label>
-            Attack
-            <input id="attack" type="range" min="0" max="1000" value="40" />
-            <span class="meta" id="attackLabel">40 ms</span>
-          </label>
-          <label>
-            Decay
-            <input id="decay" type="range" min="0" max="1000" value="200" />
-            <span class="meta" id="decayLabel">200 ms</span>
-          </label>
-          <label>
-            Sustain
-            <input
-              id="sustain"
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value="0.7"
-            />
-            <span class="meta" id="sustainLabel">0.70</span>
-          </label>
-          <label>
-            Release
-            <input id="release" type="range" min="0" max="2000" value="800" />
-            <span class="meta" id="releaseLabel">800 ms</span>
-          </label>
-          <label>
-            Detune (¢)
-            <input
-              id="detune"
-              type="range"
-              min="0"
-              max="15"
-              step="0.5"
-              value="3"
-            />
-            <span class="meta" id="detuneLabel">3.0¢</span>
-          </label>
-          <label>
-            Cutoff
-            <input
-              id="cutoff"
-              type="range"
-              min="500"
-              max="15000"
-              step="50"
-              value="12000"
-            />
-            <span class="meta" id="cutoffLabel">12000 Hz</span>
-          </label>
-          <label>
-            Resonance
-            <input
-              id="resonance"
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value="0.2"
-            />
-            <span class="meta" id="resonanceLabel">0.20</span>
-          </label>
-        </div>
-        <div id="status" class="meta"></div>
       </section>
     </main>
     <script src="/main.js"></script>
   </body>
 </html>
-
