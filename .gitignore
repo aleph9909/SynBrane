@@ -2,3 +2,6 @@ node_modules
 .env
 renders/*.wav
 npm-debug.log*
+.wrangler/
+.dev.vars
+.dev.vars.*

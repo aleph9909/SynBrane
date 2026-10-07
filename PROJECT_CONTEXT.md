@@ -8,7 +8,7 @@ The About link now sits beneath the subtitle, aligned to the right so it no long
 
 ## Architecture
 - **Frontend** (`public/`)
-  - Plain HTML/CSS/JS served statically (locally by the Node server or by Vercel in production).
+  - Plain HTML/CSS/JS served statically by Cloudflare Workers Static Assets after cutover, locally by the Node server or Wrangler. The existing Vercel site remains available until the owner completes cutover.
   - Chords panel: up to five chord tabs, with the visible count controlled by a "Chords in loop" selector. Each chord stores its own tuning, root, notes, and preset on a multi-octave spiral picker covering three visible octaves (0–2) for the current temperament rather than any circle-of-fifths ordering. The picker uses compact degree labels with a ° symbol (e.g., `7°`) that start at 1 for non-12-EDO tunings, spacing tuned for dense temperaments like 31-EDO, and temperament-specific color themes with subdued inactive bubbles and high-contrast highlighted selections. Preset chords are fetched per tuning from the backend (universal ratios plus temperament-specific sets) and applied by degree, and users can still toggle any point afterward. Root selectors track degree names per temperament. Interval and frequency readouts explain the chosen notes (cents/steps from root, Hz). A per-chord preview loop toggle stays in this panel while arpeggiation moved to global controls.
   - Synth Parameters panel: compact controls for mode (Harmony/Rhythm), tempo, rhythm multiplier, waveform, master volume, ADSR, filter settings, and loop chord count. The rhythm slider now ranges from roughly 0.1–1.0× (default ~0.3×) for subtle timing shifts instead of fast multipliers. A gentle detune control smooths polyphonic previews for dense temperaments. Patch Save/Load controls sit at the top of the panel for quick access, with master volume pinned ahead of the remaining synth sliders. The rendered loop audio player now sits directly beneath the Render Loop button in the chords panel for immediate access where the render is triggered.
   - Global arpeggiator: a switch-style toggle lives alongside the chord dropdowns so it is visible while setting tunings and presets. When flipped on it applies one pattern/rate to all chords, and the same settings drive both chord previews and loop playback/renders.
@@ -36,11 +36,53 @@ The About link now sits beneath the subtitle, aligned to the right so it no long
 - **Browser preview** mirrors these designs using in-browser Web Audio for chord/loop previews without relying on backend playback. The preview path supports globally arpeggiated or looped chords with per-note detune for smoother stacks and ensures arpeggiated previews cycle through every highlighted note before finishing.
 
 ## Deployment model
-- Backend (Node + audio engine) runs on a DigitalOcean droplet at `http://147.182.251.148:3001`.
-- Frontend is hosted on Vercel at `https://syn-brane.vercel.app`.
-- Vercel exposes API proxy routes (`/api/tunings`, `/api/chords`, `/api/play`, `/api/render`) that forward requests to the droplet (`http://147.182.251.148:3001/api/...`) and return the responses to the browser.
-- The browser only calls these relative APIs via `apiUrl('/api/...')`, so all requests stay on the Vercel origin and avoid mixed-content issues while the server-to-server hop uses HTTP.
-- `/api/render` now rewrites any returned `file` path to point to `/api/render-file?path=...`, and `/api/render-file` streams the actual WAV from the droplet (e.g., `http://147.182.251.148:3001/renders/...`) back to the browser over HTTPS. No droplet changes or TLS termination are required.
+- **Cloudflare target:** `wrangler.jsonc` names Worker `synbrane`, loads the module `worker/index.mjs`, uses compatibility date `2026-10-06`, explicitly enables `workers.dev`, and serves `./public` through `ASSETS`. `/api` and `/api/*` run the Worker first; ordinary files keep normal static asset routing. There is no SPA fallback or frontend build step. Unknown API routes return JSON 404; other missing files return a static 404.
+- **Backend:** the existing DigitalOcean origin is `http://147-182-251-148.sslip.io:3001`. Node/audio synthesis remains there. The Worker runtime variable `BACKEND_BASE` includes this non-secret initial value in Wrangler for the first dashboard deployment. Only HTTP(S) origins are accepted, without credentials, path prefixes, query strings, or fragments. Cloudflare Worker subrequests must use a hostname instead of a numeric IP. The temporary third-party `sslip.io` hostname maps to `147.182.251.148` without buying a domain or creating DNS records; it does not provide TLS. Update the hostname if the droplet IP changes. Loopback-IP overrides are for local Wrangler development only.
+- **Browser:** the empty `API_BASE` default keeps all browser API requests and rendered audio on the current HTTPS origin. Web Audio preview, tuning/chord behavior, patches, and synth code are unchanged. Do not set `window.SYNBRANE_API_BASE` for Cloudflare deployment.
+- **Cutover:** existing Vercel hosting at `https://syn-brane.vercel.app` and the legacy `api/` handlers remain intact. Cloudflare does not execute those handlers. Do not disconnect Vercel or change DNS before the owner validates Cloudflare and decides to cut over.
+- The Worker proxies the API/audio transfer only; it never runs synthesis. Browser-to-Worker traffic is HTTPS while the configured server-to-server hop remains HTTP. Droplet availability is still required for tuning/chord APIs and WAV rendering.
+
+### Worker API contract
+
+| Route | Method | Behavior |
+| --- | --- | --- |
+| `/api/tunings` | GET | Forward to backend, including query string |
+| `/api/chords` | GET | Forward query unchanged, including `tuningId` and legacy parameters |
+| `/api/play` | POST | Stream the original request body to backend |
+| `/api/render` | POST | Stream body; validate successful JSON `file` and rewrite to `/api/render-file?path=...` |
+| `/api/render-file?path=...` | GET | Stream the permitted backend `/renders/` WAV with its status and audio/cache headers |
+
+Unsupported methods return JSON 405 with `Allow`; unknown API routes return JSON 404. Unreachable upstreams return a clear JSON 502. Ordinary upstream error statuses and bodies pass through. Invalid successful render responses or rejected redirects return JSON 502 rather than exposing unsafe file URLs.
+
+Render paths must be a single flat `/renders/<filename>.wav` path matching the existing engines' output. Filename characters are ASCII letters, digits, hyphen, underscore, and dot, with an alphanumeric/hyphen/underscore first character and no `..`. Absolute and protocol-relative URLs (even the configured origin), subdirectories, backslashes, whitespace, query/fragment suffixes, malformed encoding, leftover percent escapes, and traversal are rejected. The query is decoded exactly once; missing/duplicate `path` parameters are rejected. Backend-returned paths must satisfy the same contract. All upstream redirects are rejected with 502, including same-origin redirects, so no redirect can escape the allowed destination.
+
+WAVs pass through as `ReadableStream` bodies without text conversion or whole-file buffering. Range/If-Range and conditional cache headers are forwarded; content type/length/disposition/range, accept-ranges, encoding, validators, cache policy, and retry-after are preserved where supplied. Stale entity metadata is removed when render JSON is rewritten. Browser cookies and authorization are not forwarded. The repository backend currently returns full 200 WAVs rather than implementing Range; the Worker preserves 206/304/416 when supported upstream, without inventing range support.
+
+### Exact Cloudflare setup
+
+After the owner reviews and merges this migration, follow **Workers & Pages → Create application → Import a repository → Get started → GitHub → aleph9909/SynBrane**. Configure:
+
+| Setting | Value |
+| --- | --- |
+| Worker name | `synbrane` |
+| Root directory | Repository root (`/`) |
+| Production branch | `main` |
+| Build command | Leave blank |
+| Deploy command | `npx wrangler deploy` |
+| Build environment | `NODE_VERSION=24` |
+| Runtime variable (already in Wrangler) | `BACKEND_BASE=http://147-182-251-148.sslip.io:3001` |
+
+No output directory, framework build, or secret is required. Wrangler reads `./public` directly. Select **Save and Deploy** only when ready to deploy, then use the supplied `workers.dev` URL. For an existing Worker use **Settings → Builds → Connect** and the same configuration. Keep runtime configuration in Wrangler to avoid dashboard/source drift. See [Cloudflare's Git setup](https://developers.cloudflare.com/workers/ci-cd/builds/) and [Worker-first routing](https://developers.cloudflare.com/workers/static-assets/routing/worker-script/).
+
+### Local and live verification
+
+Use Node 22+ for the pinned Wrangler dependency (Node 24 recommended), then `npm ci`. Start the backend with `npm run dev`; in another terminal run `npm run dev:worker -- --var BACKEND_BASE:http://127.0.0.1:3001` and open `http://localhost:8787`. Alternatively put the local backend override in ignored `.dev.vars`. The backend's `.env` and the Worker's `.dev.vars` are separate. Without an override, Wrangler targets DigitalOcean.
+
+Run `npm run test:worker` for mocked route/security/streaming tests, `npm run test:worker:integration` for real workerd/static-assets and local Node DSP renders, and `npm run check:worker` for deployment dry run only. Integration uses temporary WAV storage, disables SuperCollider, and cleans up its local processes. Default test ports 13001/18787 can be changed with `TEST_BACKEND_PORT`/`TEST_WORKER_PORT`.
+
+Before cutover, verify homepage, About, CSS/JS, tuning/chord changes, browser chord/loop previews, arpeggiation, patch save/load, and both harmony/rhythm server renders on the deployed Worker. Check JSON render URLs stay same-origin and lead to playable WAVs, API 404/405 behavior, rejected unsafe paths, and the upstream's actual range behavior. The complete dashboard steps and post-deployment checklist are in `README.md`.
+
+On 2026-10-06 the mocked tests, real local Worker + Node DSP render integration, and Wrangler dry run passed. Live tuning/chord requests to the configured droplet yielded network-proxy 502 errors reporting connection refused; they did not yield backend application responses. The owner subsequently confirmed a Node listener on `0.0.0.0:3001`, local HTTP 200 for `/api/tunings`, and browser access to the public tuning endpoint after allowing TCP 3001 through UFW. The owner also confirmed browser access to `/api/tunings` through `147-182-251-148.sslip.io`. Cloudflare-to-DigitalOcean connectivity/rendering and audible browser/patch checks remain live verification items. SuperCollider is optional and its enablement on the droplet is **unverified**.
 
 ## Temperaments
 - EDO tunings include 8, 10, 12, 13, 15, 16, 17, 19, 20, 22, 24, 26, 27, and 31 with temperament-specific chord presets sourced from the backend; Scala tunings come from the `scales` directory. Interval mapping in the UI uses cents approximations to highlight equivalent functions across temperaments and redraws the circle with the proper number of divisions. Each temperament paints the spiral with its own color theme, and the UI no longer exposes 32-EDO.
@@ -72,8 +114,9 @@ Chord-level `arp` objects remain in saved patches for backward compatibility, bu
 - Loop playback uses the chord circles as the single source of truth; no explore palette or bar-level editors remain.
 
 ## Configuration
-- Local use requires no environment variables; all defaults are hard-coded for development and adjustable via the UI.
-- Frontend API base: all browser fetches go through a global `API_BASE` constant defined in `public/main.js`, which defaults to an empty string so requests use the same-origin Vercel proxy routes. A `window.SYNBRANE_API_BASE` override is available for local development if you need to target a different backend directly.
+- Worker: `BACKEND_BASE` is configured in `wrangler.jsonc`; `ASSETS` is the static assets binding. Worker settings do not change the backend configuration below.
+- Backend-only local use requires no environment variables; all defaults are hard-coded for development and adjustable via the UI.
+- Frontend API base: all browser fetches go through a global `API_BASE` constant defined in `public/main.js`, which defaults to an empty string so requests use the same-origin hosting proxy routes (Cloudflare after cutover, Vercel before cutover). A `window.SYNBRANE_API_BASE` override is available for local development if you need to target a different backend directly.
 - Optional environment variables remain supported for overrides:
   - `PORT` (default `3001`)
   - `HOST` (default `0.0.0.0`)
@@ -87,3 +130,8 @@ Chord-level `arp` objects remain in saved patches for backward compatibility, bu
 ## Scripts
 - `npm run dev` — Start the backend in development mode.
 - `npm start` — Start the backend with default environment.
+- `npm run dev:worker` — Run the local Cloudflare Worker and assets; use a local backend override when desired.
+- `npm run deploy:worker` — Actually deploy Worker and assets (explicit deployment only).
+- `npm run test:worker` — Run focused mocked-upstream tests.
+- `npm run test:worker:integration` — Run the real local Worker/backend/static/WAV smoke checks.
+- `npm run check:worker` — Validate/bundle with `wrangler deploy --dry-run`, without deployment.
