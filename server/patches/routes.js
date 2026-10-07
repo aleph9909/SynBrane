@@ -50,7 +50,7 @@ function patchRoutes(store) {
         else {
           const before = parsedUrl.query.before;
           if (before !== undefined && typeof before !== 'string') throw new PatchError(400, 'Invalid page cursor.');
-          send(200, await store.list(before));
+          send(200, { ...await store.list(before), capabilities: { noteRepeats: true } });
         }
       } else {
         if (req.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') {

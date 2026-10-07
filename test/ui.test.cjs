@@ -52,8 +52,8 @@ after(async () => {
   if (renderDir) await rm(renderDir, { recursive: true, force: true });
 });
 
-async function openPage(t, width = 390) {
-  const page = await browser.newPage({ viewport: { width, height: 844 } });
+async function openPage(t, width = 390, options = {}) {
+  const page = await browser.newPage({ viewport: { width, height: 844 }, ...options });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   t.after(async () => {
@@ -445,4 +445,214 @@ test('closing the library cancels a pending load; tuning failures never change t
   await page.getByRole('button', { name: 'Load Pending nineteen', exact: true }).click();
   await page.waitForFunction(() => document.getElementById('libraryStatus').textContent.includes('Could not load the patch tuning'));
   assert.deepEqual(await page.evaluate(() => buildPatch()), original);
+});
+
+async function holdNote(page, degree = 0) {
+  const note = page.locator(`#noteCircle [data-degree-index="${degree}"]`);
+  await note.scrollIntoViewIfNeeded();
+  const rect = await note.boundingBox();
+  await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+  await page.mouse.down();
+  await page.waitForFunction(() => document.getElementById('noteRepeatPicker').matches(':popover-open'));
+  await page.mouse.up();
+  return note;
+}
+
+test('hold chooser keeps taps as toggles, shows counts, and supports keyboard and narrow screens', async t => {
+  const page = await openPage(t);
+  const note = await holdNote(page);
+  assert.equal(await page.locator('#noteRepeatPicker').isVisible(), true);
+  assert.equal(await note.getAttribute('aria-pressed'), 'true', 'hold release must not toggle the note');
+  await page.locator('#noteRepeatPicker [data-count="3"]').click();
+  assert.equal(await note.getAttribute('data-repeat'), '3');
+  assert.match(await note.getAttribute('aria-label'), /3 repeats/);
+  assert.deepEqual(await page.evaluate(() => state.chords[0].repeats), { 0: 3 });
+  await note.click();
+  assert.equal(await note.getAttribute('aria-pressed'), 'false');
+  assert.equal(await note.getAttribute('data-repeat'), null);
+  await note.click();
+  assert.deepEqual(await page.evaluate(() => state.chords[0].repeats), {});
+  for (const width of [320, 390, 900]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await note.scrollIntoViewIfNeeded();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await note.focus();
+    await page.keyboard.press('r');
+    assert.equal(await page.locator('#noteRepeatPicker').isVisible(), true);
+    assert.equal(await page.evaluate(() => {
+      const rect = document.getElementById('noteRepeatPicker').getBoundingClientRect();
+      return rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight;
+    }), true, `chooser bounds at ${width}`);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#noteRepeatPicker').isVisible(), false);
+    assert.equal(await note.evaluate(el => el === document.activeElement), true, `focus lost at ${width}`);
+  }
+  // A moved gesture must neither open the chooser nor toggle a note.
+  await note.scrollIntoViewIfNeeded();
+  const box = await note.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 25, box.y + 30);
+  await page.waitForTimeout(500);
+  await page.mouse.up();
+  assert.equal(await page.locator('#noteRepeatPicker').isVisible(), false);
+  assert.equal(await note.getAttribute('aria-pressed'), 'true');
+});
+
+test('real touch hold opens repeat choices; touch scrolling cancels the hold', async t => {
+  const page = await openPage(t, 390, { hasTouch: true, isMobile: true });
+  const note = page.locator('#noteCircle [data-degree-index="0"]');
+  await note.scrollIntoViewIfNeeded();
+  const rect = await note.boundingBox();
+  const touch = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+  const session = await page.context().newCDPSession(page);
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [touch] });
+  await page.waitForFunction(() => document.getElementById('noteRepeatPicker').matches(':popover-open'));
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  assert.equal(await page.locator('#noteRepeatPicker').isVisible(), true);
+  await page.locator('#noteRepeatPicker [data-count="4"]').tap();
+  assert.equal(await note.getAttribute('data-repeat'), '4');
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [touch] });
+  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: touch.x, y: touch.y - 60 }] });
+  await page.waitForTimeout(500);
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  assert.equal(await page.locator('#noteRepeatPicker').isVisible(), false);
+  assert.deepEqual(await page.evaluate(() => state.chords[0].repeats), { 0: 4 });
+  await session.detach();
+});
+
+test('repeat edits follow copies and root changes; presets, clear, and old patches reset them', async t => {
+  const page = await openPage(t);
+  await holdNote(page);
+  await page.locator('#noteRepeatPicker [data-count="2"]').click();
+  await page.click('#copyChord');
+  assert.deepEqual(await page.evaluate(() => state.chords[1].repeats), { 0: 2 });
+  await page.selectOption('#chordRoot', '2');
+  assert.deepEqual(await page.evaluate(() => state.chords[1].repeats), { 2: 2 });
+  assert.deepEqual(await page.evaluate(() => state.chords[0].repeats), { 0: 2 });
+  await page.click('#clearChord');
+  assert.deepEqual(await page.evaluate(() => state.chords[1].repeats), {});
+  await page.locator('#chordSwitcher button').first().click();
+  await page.selectOption('#chordPreset', { index: 1 });
+  assert.deepEqual(await page.evaluate(() => state.chords[0].repeats), {});
+  await page.evaluate(() => {
+    const old = buildPatch();
+    old.chords.forEach(chord => delete chord.repeats);
+    state.chords[0].repeats = { [state.chords[0].notes[0]]: 4 };
+    applyPatch(old);
+  });
+  assert.deepEqual(await page.evaluate(() => state.chords[0].repeats), {});
+});
+
+test('shared patches retain repeats with synth settings, and loop events carry aligned repeat counts', async t => {
+  const page = await openPage(t);
+  await holdNote(page);
+  await page.locator('#noteRepeatPicker [data-count="4"]').click();
+  const saved = await page.evaluate(() => {
+    state.synth.volume = 0.63;
+    state.synth.envelope.attackMs = 170;
+    state.synth.envelope.decayMs = 330;
+    state.synth.envelope.sustainLevel = 0.42;
+    state.synth.envelope.releaseMs = 780;
+    state.synth.filter = { cutoffHz: 4200, resonance: 0.67 };
+    state.synth.detuneCents = 7.5;
+    state.synth.waveform = 'square';
+    return buildPatch();
+  });
+  await page.click('#sharePatch');
+  await page.fill('#sharedPatchName', 'Four repeats with synth');
+  await page.click('#publishPatch');
+  await page.waitForFunction(() => document.getElementById('sharePatchStatus').textContent.startsWith('Published'));
+  const reader = await openPage(t);
+  await reader.click('#openPatchLibrary');
+  await reader.getByRole('button', { name: 'Load Four repeats with synth', exact: true }).click();
+  await reader.waitForFunction(() => !document.getElementById('patchLibrary').open);
+  assert.deepEqual(await reader.evaluate(() => buildPatch()), saved);
+  assert.equal(await reader.locator('#noteCircle [data-degree-index="0"]').getAttribute('data-repeat'), '4');
+  const event = await reader.evaluate(() => buildLoopPayload().sequence[0]);
+  assert.deepEqual(event.arpeggio.repeats, event.degrees.map(degree => saved.chords[0].repeats[degree] || 1));
+});
+
+test('browser scheduling and real WAV keep repeated notes in order without crossing the next bar', async t => {
+  const page = await openPage(t);
+  const result = await page.evaluate(() => {
+    const chord = state.chords[0];
+    chord.notes = [0, 4, 7];
+    chord.repeats = { 0: 2, 7: 3 };
+    state.loopChordCount = 1;
+    state.bpm = 120;
+    state.synth = { waveform: 'sine', volume: 0.6, detuneCents: 0,
+      envelope: { attackMs: 0, decayMs: 0, sustainLevel: 1, releaseMs: 0 },
+      filter: { cutoffHz: 15000, resonance: 0 } };
+    const ctx = getPreviewContext();
+    const original = ctx.createOscillator.bind(ctx);
+    const scheduled = [];
+    ctx.createOscillator = () => {
+      const osc = original();
+      const set = osc.frequency.setValueAtTime.bind(osc.frequency);
+      osc.frequency.setValueAtTime = (value, time) => { scheduled.push(value); return set(value, time); };
+      return osc;
+    };
+    state.loopPreview.stop = false;
+    scheduleHarmonyPreview(chord, ctx.currentTime + 0.1, 2, state.synth, 120);
+    const frequencies = chordToEvent(chord, 0).frequencies;
+    const repeated = [...scheduled];
+    stopPreview();
+    state.loopPreview.stop = false;
+    state.globalArp.enabled = false;
+    scheduled.length = 0;
+    scheduleHarmonyPreview(chord, ctx.currentTime + 0.1, 2, state.synth, 120);
+    const simultaneous = [...scheduled];
+    stopPreview();
+    state.globalArp.enabled = true;
+    // A long 4x pattern is still constrained to the requested loop bar.
+    state.loopPreview.stop = false;
+    scheduled.length = 0;
+    const dense = { ...chord, notes: Array.from({ length: 12 }, (_, i) => i), repeats: Object.fromEntries(Array.from({ length: 12 }, (_, i) => [i, 4])) };
+    scheduleHarmonyPreview(dense, ctx.currentTime + 0.1, 2, state.synth, 120);
+    const boundedCount = scheduled.length;
+    stopPreview();
+    ctx.createOscillator = original;
+    const payload = buildLoopPayload();
+    payload.loopCount = 1;
+    return { repeated, simultaneous, frequencies, boundedCount, payload };
+  });
+  const [c, e, g] = result.frequencies;
+  const expected = [c, c, e, g, g, g, c, c];
+  assert.deepEqual(result.repeated, expected);
+  assert.deepEqual(result.simultaneous, result.frequencies, 'CHORD must not stack repeated voices');
+  assert.equal(result.boundedCount, 8);
+  const response = await fetch(`${origin}/api/render`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(result.payload) });
+  assert.equal(response.status, 200);
+  const { file } = await response.json();
+  const wav = Buffer.from(await (await fetch(origin + file)).arrayBuffer());
+  assert.equal(wav.toString('ascii', 0, 4), 'RIFF');
+  const rate = wav.readUInt32LE(24);
+  for (let step = 0; step < expected.length; step++) {
+    const start = Math.round((step * 0.25 + 0.05) * rate);
+    const end = Math.round((step * 0.25 + 0.20) * rate);
+    let crossings = 0;
+    for (let sample = start + 1; sample < end; sample++) {
+      if (wav.readInt16LE(44 + (sample - 1) * 2) <= 0 && wav.readInt16LE(44 + sample * 2) > 0) crossings++;
+    }
+    const measured = crossings / ((end - start) / rate);
+    assert.ok(Math.abs(measured - expected[step]) < 10, `WAV step ${step}: ${measured} instead of ${expected[step]}`);
+  }
+});
+
+test('sharing refuses an older library that would silently drop note repeats', async t => {
+  const page = await openPage(t);
+  await page.evaluate(() => { state.chords[0].repeats = { 0: 2 }; });
+  let posts = 0;
+  await page.route('**/api/patches', route => {
+    if (route.request().method() === 'POST') posts++;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: '{"patches":[],"nextCursor":null}' });
+  });
+  await page.click('#sharePatch');
+  await page.fill('#sharedPatchName', 'Preserve my repeats');
+  await page.click('#publishPatch');
+  await page.waitForFunction(() => document.getElementById('sharePatchStatus').textContent.includes('cannot save note repeats yet'));
+  assert.equal(posts, 0);
+  assert.deepEqual(await page.evaluate(() => state.chords[0].repeats), { 0: 2 });
 });

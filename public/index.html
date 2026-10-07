@@ -301,7 +301,7 @@
             aria-label="Spiral note sequencer"
           ></div>
           <div class="circle-hint">
-            Tap the spiral to toggle notes · 3 octaves
+            Tap to toggle · Hold a note for 1–4 repeats · 3 octaves
           </div>
         </div>
         <div class="chord-actions">
@@ -366,6 +366,14 @@
       <ul id="patchLibraryList" aria-label="Shared patches"></ul>
       <button id="morePatches" class="ghost" hidden>Load more</button>
     </dialog>
+    <div id="noteRepeatPicker" popover="manual" role="dialog" aria-labelledby="noteRepeatTitle">
+      <div class="repeat-picker-heading"><strong id="noteRepeatTitle">Note repeats</strong><button id="closeNoteRepeats" class="ghost" aria-label="Close note repeats">×</button></div>
+      <div class="repeat-picker-options" role="group" aria-label="Repeat count">
+        <button type="button" data-count="1">1×</button><button type="button" data-count="2">2×</button><button type="button" data-count="3">3×</button><button type="button" data-count="4">4×</button>
+      </div>
+      <p class="meta">Consecutive ARP steps · Applies on next Play</p>
+    </div>
+    <script src="/arp-pattern.js"></script>
     <script src="/main.js"></script>
     <script src="/patch-library.js"></script>
   </body>

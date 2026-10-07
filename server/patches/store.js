@@ -67,7 +67,17 @@ function validatePatch(raw) {
     requireValue(Array.isArray(chord.notes) && chord.notes.length <= Math.min(384, span * 3), 'Too many notes.');
     const notes = chord.notes.map(note => number(note, 0, span * 3 - 1, 'Note degree', true));
     requireValue(new Set(notes).size === notes.length, 'Duplicate note degrees are not supported.');
+    const repeats = {};
+    if (chord.repeats !== undefined) {
+      object(chord.repeats, 'Note repeats');
+      for (const [degree, value] of Object.entries(chord.repeats)) {
+        requireValue(/^(0|[1-9]\d*)$/.test(degree) && notes.includes(Number(degree)), 'Repeats must refer to a selected note.');
+        const count = number(value, 1, 4, 'Note repeat count', true);
+        if (count > 1) repeats[degree] = count;
+      }
+    }
     return { tuningId: tuning.id, root: chord.root, notes: notes.sort((a, b) => a - b), preset,
+      ...(Object.keys(repeats).length ? { repeats } : {}),
       arp: arp(chord.arp || { enabled: false, pattern: 'up', rate: '1/8' }) };
   });
   const global = object(patch.global, 'Global settings');

@@ -147,6 +147,10 @@
       } else patch = buildPatch();
       const body = JSON.stringify({ name: el('sharedPatchName').value.trim(), author: el('sharedPatchAuthor').value.trim(), patch });
       if (new Blob([body]).size > 16 * 1024) throw new Error('Patch is too large (16 KiB maximum).');
+      if (Array.isArray(patch?.chords) && patch.chords.some(chord => Object.values(chord.repeats || {}).some(count => count > 1))) {
+        const library = await request('/api/patches');
+        if (!library.capabilities?.noteRepeats) throw new Error('The library cannot save note repeats yet. Please save this patch locally.');
+      }
       const data = await request('/api/patches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
       shareStatus.textContent = `Published ${data.patch.name}. It is now available to everyone.`;
       if (dialog.open) {
