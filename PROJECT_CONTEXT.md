@@ -161,3 +161,23 @@ public deletion endpoint are provided. Operators moderate by removing the exact
 record file. Limits: 16 KiB, 20 attempts/minute globally, 100 patches/hour,
 1,000 records; disk-based hourly/capacity limits survive restart. See README for
 setup, API responses, operational details, and the temporary-storage test suite.
+
+## Per-note ARP repeats
+
+Hold a spiral note for 450 ms to choose 1×–4× in a small anchored popover. Taps
+still toggle notes; moving 10px or scrolling cancels a pending hold. Keyboard R /
+Shift+F10 opens the chooser. Badges and stronger glow supplement existing octave
+colors. Repeat counts live in each chord's optional `repeats` degree→count map;
+normalization retains selected degrees only, defaulting to 1. Copy deep-copies
+the map, root edits transpose it, and presets/temperaments/clear reset it.
+
+`public/arp-pattern.js` shares pitch ordering and consecutive group expansion
+between the browser and Node renderer. Event `arpeggio.repeats` is an aligned
+count array, independent of unique chord notes. CHORD/Rhythm do not expand repeats.
+Loop scheduling stays inside the bar; standalone chord previews allow a full
+cycle. Repeated harmony ARP WAV jobs bypass the legacy SC bridge for Node DSP.
+Saved/shared v1 patches retain nondefault counts; older patches remain compatible.
+Patch list API advertises `capabilities.noteRepeats` so uploads to an old server
+cannot silently discard counts. Backend update/restart is required before the
+frontend rollout. Tests include real touch, keyboard, copied/transposed notes,
+shared synth+repeat restoration, browser scheduling, and WAV pitch measurement.

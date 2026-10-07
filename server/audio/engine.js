@@ -66,25 +66,7 @@ function arpeggioStepDuration(rate, bpm) {
   return secondsPerBeat * portion;
 }
 
-function arpeggioCycle(freqs, pattern) {
-  if (!freqs?.length) return [];
-  const sorted = [...freqs].slice().sort((a, b) => a - b);
-  if (pattern === 'down') return [...sorted].reverse();
-  if (pattern === 'updown') {
-    const ascent = [...sorted];
-    const descent = sorted.length > 1 ? sorted.slice(1, -1).reverse() : [];
-    return [...ascent, ...descent];
-  }
-  if (pattern === 'random') {
-    const shuffle = [...sorted];
-    for (let i = shuffle.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffle[i], shuffle[j]] = [shuffle[j], shuffle[i]];
-    }
-    return shuffle;
-  }
-  return [...sorted];
-}
+const { orderFrequencies: arpeggioCycle } = require('../../public/arp-pattern');
 
 function normalizeSynthSettings(raw = {}) {
   const envelope = raw.envelope || raw.adsr || {};
@@ -236,7 +218,7 @@ function addRhythmPatternHits(samples, startSample, sampleRate, pattern) {
 }
 
 function generateArpeggiatedSamples({ frequencies, duration, sampleRate, synth, bpm, arpeggio }) {
-  const pattern = arpeggioCycle(frequencies, arpeggio?.pattern || 'up');
+  const pattern = arpeggioCycle(frequencies, arpeggio?.pattern || 'up', arpeggio?.repeats);
   const stepDuration = arpeggioStepDuration(arpeggio?.rate || '1/8', bpm);
   if (!pattern.length || !Number.isFinite(stepDuration) || stepDuration <= 0) return null;
 

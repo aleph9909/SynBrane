@@ -83,6 +83,7 @@ function parseArpeggioFields(source = {}) {
     enabled: raw.enabled ?? Boolean(source.arpeggioEnabled),
     pattern,
     rate: raw.rate || source.arpeggioRate || '1/8',
+    repeats: Array.isArray(raw.repeats) ? raw.repeats.slice(0, 384).map(value => Number.isInteger(value) ? Math.max(1, Math.min(4, value)) : 1) : [],
   };
 }
 

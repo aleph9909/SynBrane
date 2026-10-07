@@ -102,7 +102,7 @@ function defaultArp() {
 }
 
 function defaultChord() {
-  return { tuningId: null, root: 0, notes: [], preset: 'major-triad', arp: defaultArp() };
+  return { tuningId: null, root: 0, notes: [], repeats: {}, preset: 'major-triad', arp: defaultArp() };
 }
 
 function resolveArpeggio(chord) {
@@ -303,6 +303,7 @@ function applyPresetToChord(chord, preset) {
   const mappedDegrees = (preset.degrees || []).map((deg) => deg + root);
   chord.notes = Array.from(new Set(mappedDegrees)).sort((a, b) => a - b);
   chord.preset = preset.id;
+  chord.repeats = {};
   normalizeChordNotes(chord);
 }
 
@@ -337,6 +338,12 @@ function normalizeChordNotes(chord) {
     })
     .filter((deg, idx, arr) => arr.indexOf(deg) === idx)
     .sort((a, b) => a - b);
+  const repeats = {};
+  for (const degree of chord.notes) {
+    const count = SynBraneArp.repeatCount(chord.repeats?.[degree]);
+    if (count > 1) repeats[degree] = count;
+  }
+  chord.repeats = repeats;
   if (!chord.notes.length) chord.notes = [];
   return chord;
 }
@@ -514,7 +521,14 @@ function updateSpiralActiveStates() {
   const noteSet = new Set(chord.notes || []);
   spiralState.nodes.forEach((point) => {
     const degreeIndex = Number(point.dataset.degreeIndex);
-    setPointState(point, noteSet.has(degreeIndex));
+    const active = noteSet.has(degreeIndex);
+    const count = SynBraneArp.repeatCount(chord.repeats?.[degreeIndex]);
+    setPointState(point, active);
+    if (active && count > 1) point.dataset.repeat = count;
+    else delete point.dataset.repeat;
+    point.style.setProperty('--repeat-glow', `${8 + count * 5}px`);
+    point.title = `${point.dataset.noteTitle}${active && count > 1 ? ` · ${count} repeats (ARP)` : ''}`;
+    point.setAttribute('aria-label', point.title);
   });
   renderIntervalPanels();
 }
@@ -528,6 +542,104 @@ function calculateSpiralSize(span) {
   const circleSize = Math.max(180, Math.min(preferredSize, wrapSize - 8));
   return { pointSize, circleSize };
 }
+
+const noteRepeatPicker = document.getElementById('noteRepeatPicker');
+let noteRepeatTarget = null;
+let cancelNoteHold = () => {};
+
+function closeNoteRepeats(restoreFocus = false) {
+  cancelNoteHold();
+  const point = noteRepeatTarget?.point;
+  if (noteRepeatPicker.matches(':popover-open')) noteRepeatPicker.hidePopover();
+  noteRepeatTarget = null;
+  if (restoreFocus && point?.isConnected) point.focus({ preventScroll: true });
+}
+
+function openNoteRepeats(point, degree) {
+  closeNoteRepeats();
+  const chord = state.chords[state.activeChord];
+  noteRepeatTarget = { point, degree, chord };
+  document.getElementById('noteRepeatTitle').textContent = `${point.textContent} · Note repeats`;
+  const count = SynBraneArp.repeatCount(chord.repeats?.[degree]);
+  noteRepeatPicker.querySelectorAll('[data-count]').forEach(button => {
+    button.setAttribute('aria-pressed', String(Number(button.dataset.count) === count));
+  });
+  noteRepeatPicker.showPopover();
+  const rect = point.getBoundingClientRect();
+  const popup = noteRepeatPicker.getBoundingClientRect();
+  noteRepeatPicker.style.left = `${Math.max(8, Math.min(innerWidth - popup.width - 8, rect.left + rect.width / 2 - popup.width / 2))}px`;
+  const below = rect.bottom + 12;
+  noteRepeatPicker.style.top = `${Math.max(8, below + popup.height < innerHeight - 8 ? below : rect.top - popup.height - 12)}px`;
+  noteRepeatPicker.querySelector(`[data-count="${count}"]`).focus({ preventScroll: true });
+}
+
+function bindNoteRepeatHold(point, degree) {
+  let timer = null;
+  let startX = 0, startY = 0;
+  const cancel = () => { clearTimeout(timer); timer = null; };
+  point.addEventListener('pointerdown', event => {
+    cancelNoteHold();
+    point.suppressNoteClick = false;
+    if (!event.isPrimary || event.button !== 0) return;
+    startX = event.clientX;
+    startY = event.clientY;
+    cancelNoteHold = cancel;
+    point.setPointerCapture(event.pointerId);
+    timer = setTimeout(() => {
+      point.suppressNoteClick = true;
+      openNoteRepeats(point, degree);
+    }, 450);
+  });
+  point.addEventListener('pointermove', event => {
+    if (timer && Math.hypot(event.clientX - startX, event.clientY - startY) > 10) {
+      point.suppressNoteClick = true;
+      cancel();
+    }
+  });
+  point.addEventListener('pointerup', cancel);
+  point.addEventListener('pointercancel', () => { point.suppressNoteClick = true; cancel(); });
+  point.addEventListener('lostpointercapture', cancel);
+  point.addEventListener('contextmenu', event => { event.preventDefault(); });
+  point.addEventListener('keydown', event => {
+    if (event.key.toLowerCase() === 'r' || event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+      event.preventDefault();
+      openNoteRepeats(point, degree);
+    }
+  });
+}
+
+noteRepeatPicker.querySelectorAll('[data-count]').forEach(button => {
+  button.onclick = () => {
+    const target = noteRepeatTarget;
+    if (!target || target.chord !== state.chords[state.activeChord]) return closeNoteRepeats();
+    const { chord, degree } = target;
+    if (!chord.notes.includes(degree)) chord.notes.push(degree);
+    chord.repeats = { ...chord.repeats, [degree]: Number(button.dataset.count) };
+    normalizeChordNotes(chord);
+    updateSpiralActiveStates();
+    closeNoteRepeats(true);
+  };
+});
+document.getElementById('closeNoteRepeats').onclick = () => closeNoteRepeats(true);
+noteRepeatPicker.addEventListener('keydown', event => {
+  if (event.key === 'Escape') { event.preventDefault(); closeNoteRepeats(true); }
+});
+noteRepeatPicker.addEventListener('toggle', () => {
+  if (!noteRepeatPicker.matches(':popover-open')) noteRepeatTarget = null;
+});
+window.addEventListener('resize', () => closeNoteRepeats());
+window.addEventListener('scroll', () => closeNoteRepeats(), { capture: true, passive: true });
+document.addEventListener('pointerdown', event => {
+  cancelNoteHold();
+  if (noteRepeatTarget && !noteRepeatPicker.contains(event.target)) closeNoteRepeats();
+}, true);
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && noteRepeatTarget) { event.preventDefault(); closeNoteRepeats(true); }
+});
+document.addEventListener('focusin', event => {
+  if (noteRepeatTarget && event.target !== noteRepeatTarget.point && !noteRepeatPicker.contains(event.target)) closeNoteRepeats();
+});
+document.addEventListener('visibilitychange', () => { if (document.hidden) closeNoteRepeats(); });
 
 function buildSpiral(tuning) {
   const span = getDegreeSpan(tuning);
@@ -547,6 +659,7 @@ function buildSpiral(tuning) {
   const outerRadius = maxRadius * 0.9;
   const turns = 2.5;
 
+  closeNoteRepeats();
   noteCircle.innerHTML = '';
   spiralState.nodes = [];
   const fragment = document.createDocumentFragment();
@@ -579,9 +692,14 @@ function buildSpiral(tuning) {
     point.style.setProperty('--note-transform', `translate(${x}px, ${y}px) translate(-50%, -50%)`);
     const noteName = isTwelveEdo(tuning) ? ` · ${NOTE_NAMES_12[degreeInOctave]}` : '';
     point.title = `Degree ${displayedDegreeNumber(tuning, degreeInOctave)}${noteName} (oct +${octaveIndex})`;
+    point.dataset.noteTitle = point.title;
     point.setAttribute('aria-label', point.title);
+    point.setAttribute('aria-haspopup', 'dialog');
+    point.setAttribute('aria-description', 'Tap to toggle. Hold or press R to set note repeats.');
     point.textContent = degreeLabel(tuning, degreeInOctave, chord.root || 0);
+    bindNoteRepeatHold(point, degreeIndex);
     point.onclick = () => {
+      if (point.suppressNoteClick) { point.suppressNoteClick = false; return; }
       const activeChord = state.chords[state.activeChord];
       if (activeChord.notes.includes(degreeIndex)) {
         activeChord.notes = activeChord.notes.filter((n) => n !== degreeIndex);
@@ -616,6 +734,7 @@ function spiralNeedsRebuild(tuning) {
 }
 
 function renderCircle() {
+  closeNoteRepeats();
   const chord = state.chords[state.activeChord];
   normalizeChordNotes(chord);
   const tuning = getTuning(chord.tuningId);
@@ -680,6 +799,7 @@ function copyActiveChordToNext() {
   target.tuningId = source.tuningId;
   target.root = source.root || 0;
   target.notes = [...(source.notes || [])];
+  target.repeats = { ...source.repeats };
   target.preset = source.preset;
   target.arp = { ...defaultArp(), ...(source.arp || {}) };
 
@@ -775,6 +895,13 @@ function attachControlListeners() {
     const newRoot = Number(e.target.value);
     const delta = newRoot - oldRoot;
     chord.root = newRoot;
+    const maxDegree = VISIBLE_OCTAVES * getDegreeSpan(getTuning(chord.tuningId)) - 1;
+    const shiftedRepeats = {};
+    for (const degree of chord.notes || []) {
+      const shifted = Math.max(0, Math.min(degree + delta, maxDegree));
+      shiftedRepeats[shifted] = Math.max(shiftedRepeats[shifted] || 1, chord.repeats?.[degree] || 1);
+    }
+    chord.repeats = shiftedRepeats;
     chord.notes = (chord.notes || []).map((deg) => deg + delta);
     normalizeChordNotes(chord);
     renderCircle();
@@ -796,6 +923,7 @@ function attachControlListeners() {
 
   clearChordBtn.onclick = () => {
     state.chords[state.activeChord].notes = [];
+    state.chords[state.activeChord].repeats = {};
     renderCircle();
   };
 
@@ -925,7 +1053,7 @@ function ensureChordComplete(chord, index) {
 function chordToEvent(chord, index) {
   ensureChordComplete(chord, index);
   const frequencies = chord.notes.map((deg) => degreeToFrequency(chord.tuningId, deg));
-  const arpeggio = resolveArpeggio(chord);
+  const arpeggio = { ...resolveArpeggio(chord), repeats: chord.notes.map(degree => chord.repeats?.[degree] || 1) };
   return {
     bar: index,
     durationBars: 1,
@@ -1025,23 +1153,8 @@ function applyEnvelope(gainNode, ctx, startTime, durationSec, envelope) {
   return durationSec + release;
 }
 
-function orderFrequenciesForPattern(freqs, pattern) {
-  const sorted = [...freqs].sort((a, b) => a - b);
-  if (pattern === 'down') return [...sorted].reverse();
-  if (pattern === 'updown') {
-    const ascent = [...sorted];
-    const descent = sorted.length > 1 ? sorted.slice(1, -1).reverse() : [];
-    return [...ascent, ...descent];
-  }
-  if (pattern === 'random') {
-    const shuffle = [...sorted];
-    for (let i = shuffle.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffle[i], shuffle[j]] = [shuffle[j], shuffle[i]];
-    }
-    return shuffle;
-  }
-  return sorted;
+function orderFrequenciesForPattern(freqs, pattern, repeats = []) {
+  return SynBraneArp.orderFrequencies(freqs, pattern, repeats);
 }
 
 function stepDurationFromRate(rate, bpm) {
@@ -1264,12 +1377,13 @@ function scheduleHarmonyPreview(chord, startTime, durationSec, synthSettings, te
   const filterCfg = synth.filter || {};
   const freqs = chord.notes.map((deg) => degreeToFrequency(chord.tuningId, deg));
   const chordArp = resolveArpeggio(chord);
-  const useArp = chordArp.enabled && freqs.length > 1;
-  const orderedFreqs = useArp ? orderFrequenciesForPattern(freqs, chordArp.pattern) : freqs;
+  const repeatCounts = chord.notes.map(degree => chord.repeats?.[degree] || 1);
+  const useArp = chordArp.enabled && (freqs.length > 1 || repeatCounts.some(count => count > 1));
+  const orderedFreqs = useArp ? orderFrequenciesForPattern(freqs, chordArp.pattern, repeatCounts) : freqs;
   const stepSec = useArp ? stepDurationFromRate(chordArp.rate, tempo || state.bpm) : durationSec;
   const noteDuration = useArp ? Math.min(durationSec, Math.max(0.08, stepSec * 0.9)) : durationSec;
   const steps = useArp
-    ? Math.max(orderedFreqs.length, Math.max(1, Math.floor(durationSec / stepSec)))
+    ? Math.max(1, Math.floor(durationSec / stepSec))
     : orderedFreqs.length;
 
   let lastOffset = 0;
@@ -1330,7 +1444,12 @@ function scheduleChordPreview(chord, startTime, durationSec, { mode, synthSettin
       const ctx = getPreviewContext();
       const startTime = ctx.currentTime + 0.05;
       const beatsPerBar = 4;
-      const sustainDuration = state.mode === 'rhythm' ? (60 / Math.max(30, state.bpm)) * beatsPerBar : 1;
+      let sustainDuration = state.mode === 'rhythm' ? (60 / Math.max(30, state.bpm)) * beatsPerBar : 1;
+      const arp = resolveArpeggio(chord);
+      if (state.mode === 'harmony' && arp.enabled) {
+        const cycle = orderFrequenciesForPattern(chord.notes, arp.pattern, chord.notes.map(degree => chord.repeats?.[degree] || 1));
+        sustainDuration = Math.max(sustainDuration, cycle.length * stepDurationFromRate(arp.rate, state.bpm));
+      }
       const total = scheduleChordPreview(chord, startTime, sustainDuration, {
         mode: state.mode,
         synthSettings: state.synth,
@@ -1457,6 +1576,8 @@ async function playLoop() {
         tuningId: event.tuningId,
         root: event.root || 0,
         notes: event.degrees || event.customChord?.degrees || [],
+        repeats: Object.fromEntries((event.degrees || event.customChord?.degrees || []).map((degree, index) =>
+          [degree, event.arpeggio?.repeats?.[index] || 1])),
         arp: event.arpeggio || {
           enabled: Boolean(event.arpeggioEnabled),
           pattern: event.arpeggioPattern || 'up',
@@ -1572,6 +1693,7 @@ function buildPatch() {
     chords: state.chords.map((chord) => ({
       tuningId: chord.tuningId,
       notes: [...(chord.notes || [])],
+      ...(Object.keys(chord.repeats || {}).length ? { repeats: { ...chord.repeats } } : {}),
       root: chord.root || 0,
       preset: chord.preset,
       arp: { ...defaultArp(), ...(chord.arp || {}) },
@@ -1609,6 +1731,7 @@ function applyPatch(data) {
     if (!state.chords[idx]) return;
     state.chords[idx].tuningId = entry.tuningId || defaultTuningId();
     state.chords[idx].notes = Array.isArray(entry.notes) ? entry.notes.map((n) => Number(n)) : [];
+    state.chords[idx].repeats = entry.repeats && typeof entry.repeats === 'object' ? { ...entry.repeats } : {};
     state.chords[idx].root = Number(entry.root ?? state.chords[idx].root ?? 0);
     state.chords[idx].preset = coercePresetId(entry.preset || state.chords[idx].preset || 'major-triad');
     state.chords[idx].arp = { ...defaultArp(), ...(entry.arp || {}) };

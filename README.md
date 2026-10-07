@@ -147,3 +147,37 @@ Run `npm run test:patches`, `npm run test:ui`, and
 `npm run test:worker:integration` to check validation, disk persistence, sharing
 across browser sessions, mobile layout, and the real Worker proxy. Tests use
 isolated temporary storage and never upload to the live community library.
+
+## Spiral note repeats
+
+Tap a spiral note to turn it on or off. Hold it for about half a second to open
+**1× / 2× / 3× / 4×** beside the note. Choosing a count also enables an off note.
+Repeated notes display a number and stronger glow while keeping their octave
+color. Movement/scrolling cancels a hold. Tap outside, Close, or Escape to dismiss.
+Keyboard users can focus a note and press **R** (or Shift+F10) for the same chooser;
+Enter/Space still toggle the note. Changes apply on the next Play.
+
+Counts are consecutive ARP steps per visit to a pitch: C×2, E×1, G×3 gives
+C, C, E, G, G, G. Up/Down/Up-down order pitches before repeating each one;
+Random shuffles pitch groups, keeping each group's repeats together. Each step
+keeps the selected arp rate. A loop bar stays four beats and may end partway
+through a long pattern; Play chord previews at least one complete cycle.
+CHORD and Rhythm keep their existing behavior and retain counts for later ARP use.
+
+Counts are independent per chord. Copy preserves them, changing root transposes
+them, and choosing a new preset/temperament or clearing a chord resets them.
+Turning a note off removes its count; turning it back on starts at 1×.
+The optional v1 patch field `chords[].repeats` maps selected zero-based degrees to
+integer counts 2–4 (for example `{"0":2,"7":3}`). Missing counts mean 1×, so older
+patches still load. Both local JSON and the public library retain repeats along
+with all synth settings. The library validates that keys refer to selected notes.
+
+Deploy/restart the updated Node backend before deploying the frontend. The patch
+list response advertises `capabilities.noteRepeats`; the UI refuses to publish
+repeat-bearing patches to an older backend that would discard the new field.
+Audio API events carry `arpeggio.repeats` aligned with their frequency/degree list.
+Browser playback and Node rendering use the same pattern helper. Repeated ARP WAV
+jobs use Node DSP even if the legacy SuperCollider bridge is enabled, because that
+bridge cannot schedule per-note repeats. `npm run test:repeats` and `npm run test:ui`
+cover patterns, persistence, touch/keyboard behavior, browser timing, and measured
+pitches in a real WAV render.

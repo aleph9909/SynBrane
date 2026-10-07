@@ -12,6 +12,7 @@
     "test:worker": "node --test test/worker.test.mjs",
     "check:worker": "wrangler deploy --dry-run",
     "test:worker:integration": "node test/worker.integration.mjs",
+    "test:repeats": "node --test test/note-repeats.test.cjs",
     "test:patches": "node --test test/patches.test.cjs",
     "test:ui": "node --test test/ui.test.cjs"
   },

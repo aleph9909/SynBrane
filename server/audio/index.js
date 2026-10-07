@@ -19,7 +19,11 @@ async function playRealtime(job) {
 }
 
 async function renderToFile(job) {
-  if (useSuperCollider()) {
+  // The legacy SuperCollider script has no per-note arp scheduling. Repeated
+  // arp jobs use the Node renderer so the exported sound retains their timing.
+  const hasRepeats = event => event.arpeggio?.enabled && event.arpeggio?.repeats?.some(count => count > 1);
+  const repeatedArp = job.mode === 'harmony' && (hasRepeats(job) || job.events?.some(hasRepeats));
+  if (useSuperCollider() && !repeatedArp) {
     try {
       return await supercolliderClient.renderToFile(job);
     } catch (error) {
