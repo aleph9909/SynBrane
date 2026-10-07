@@ -83,3 +83,67 @@ Mocked-upstream tests and the real local Worker/Node DSP integration passed, as 
 ## Documentation
 
 See `PROJECT_CONTEXT.md` for API contracts, security boundaries, configuration, and audio behavior.
+
+## Public patch library
+
+**Patch library** and **Share patch** sit beside local Save/Load below the spiral.
+The library opens in a mobile-friendly dialog. Visitors can publish the current
+sound or upload a saved version 1 JSON patch, with a name and optional artist
+alias. Latest patches are paginated; **Load** replaces the current instrument
+settings without starting playback, and **Download** saves a normal local patch.
+Uploads are public, anonymous, and immutable. Artist names are unverified labels;
+there are no accounts or public edit/delete operations in this first version.
+
+The Node backend stores one validated JSON record per patch on the DigitalOcean
+droplet. No database or extra service is required. Storage defaults to
+`~/.synbrane/patches` under the backend service user's home, **outside the Git
+checkout**. To choose another persistent location, set the backend `.env` variable:
+
+```dotenv
+PATCHES_DIR=/var/lib/synbrane/patches
+```
+
+Before enabling that override, create the directory and give the Node service
+user write permission. Keep that service account and storage path consistent
+across restarts. Include the directory in droplet backups: application updates
+and process restarts retain patches, but replacing/deleting the disk does not.
+A container deployment must mount a persistent volume at `PATCHES_DIR`.
+
+Deploy the updated **Node backend and restart its process first**, then deploy the
+updated Worker/frontend. A frontend-only deployment cannot provide storage.
+The Worker forwards `GET/POST /api/patches` and `GET /api/patches/<id>` to the
+same `BACKEND_BASE`; nothing is written to Worker memory or the static assets.
+The older Vercel API handlers do not implement this library. After deployment,
+check `/api/patches` returns JSON, publish a test patch, load it from a second
+browser, and confirm it remains listed after restarting the Node service.
+
+Limits are deliberately small for the initial **single Node process** deployment:
+16 KiB per request/stored record, 1–5 chords, known tunings/presets and bounded
+synth settings, 20 upload attempts/minute globally, 100 stored patches/hour, and
+1,000 patches total. Global limits work behind the Worker without trusting IP
+headers; one heavy uploader can temporarily use the shared allowance. The
+hourly/capacity counts persist on disk; the minute counter resets on restart.
+The server reconstructs the allowed schema, generates its own filenames, and
+writes via a synced temporary file and atomic rename. No uploaded code, audio,
+HTML, arbitrary filenames, or extra properties are retained. Text is displayed
+with `textContent` in the browser.
+
+For moderation, find the offending record's ID using `GET /api/patches` (or inspect
+records on disk), back it up if needed, and remove that exact `<id>.json` from
+`PATCHES_DIR`. There is no unauthenticated deletion endpoint. If the library
+outgrows the initial limits, add authenticated moderation and a database/object
+store before running multiple backend writers.
+
+API responses are JSON with `Cache-Control: no-store`:
+
+- `GET /api/patches` → `{ patches: [summary, ...], nextCursor }`, 20 newest records.
+- `GET /api/patches?before=<nextCursor>` → next page.
+- `GET /api/patches/<id>` → `{ id, name, author, createdAt, patch }`.
+- `POST /api/patches` with `{ name, author?, patch }` → 201 `{ patch: summary }`.
+- Invalid data: 400; unknown ID: 404; unsupported method: 405; oversized upload:
+  413; wrong content type: 415; rate limit: 429; full library: 507.
+
+Run `npm run test:patches`, `npm run test:ui`, and
+`npm run test:worker:integration` to check validation, disk persistence, sharing
+across browser sessions, mobile layout, and the real Worker proxy. Tests use
+isolated temporary storage and never upload to the live community library.

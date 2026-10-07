@@ -1,4 +1,5 @@
 // Real local Worker runtime + repository backend (Node DSP); no remote services.
+import patch from './fixtures/patch.cjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -39,7 +40,7 @@ async function ready(url, processState) {
 
 try {
   const server = start(['server/index.js'], { HOST: '127.0.0.1', PORT: backendPort,
-    RENDER_OUTPUT_DIR: renderDir, SUPER_COLLIDER_ENABLED: 'false' });
+    RENDER_OUTPUT_DIR: renderDir, PATCHES_DIR: join(renderDir, 'patches'), SUPER_COLLIDER_ENABLED: 'false' });
   await ready(`${backend}/api/tunings`, server);
   const worker = start(['node_modules/wrangler/bin/wrangler.js', 'dev', '--local',
     '--ip', '127.0.0.1', '--port', workerPort, '--inspector-port', '0',
@@ -48,7 +49,7 @@ try {
 
   for (const [url, file, mime] of [['/', 'index.html', 'text/html'],
     ['/about.html', 'about.html', 'text/html'], ['/styles.css', 'styles.css', 'text/css'],
-    ['/main.js', 'main.js', 'javascript']]) {
+    ['/patch-library.js', 'patch-library.js', 'javascript'], ['/main.js', 'main.js', 'javascript']]) {
     const response = await fetch(origin + url);
     assert.equal(response.status, 200);
     assert.ok(response.headers.get('content-type').includes(mime));
@@ -67,6 +68,17 @@ try {
   assert.equal((await fetch(`${origin}/api/chords`, { method: 'POST' })).status, 405);
   const missingStatic = await fetch(`${origin}/missing.html`);
   assert.equal(missingStatic.status, 404);
+
+  const uploaded = await fetch(`${origin}/api/patches`, { method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Worker roundtrip', patch: patch() }) });
+  assert.equal(uploaded.status, 201);
+  const sharedId = (await uploaded.json()).patch.id;
+  const shared = await (await fetch(`${origin}/api/patches/${sharedId}`)).json();
+  assert.deepEqual(shared.patch, patch());
+  assert.equal((await (await fetch(`${origin}/api/patches`)).json()).patches[0].id, sharedId);
+  assert.equal((await fetch(`${origin}/api/patches/${sharedId}`, { method: 'POST' })).status, 405);
+  console.log('PASS shared patch upload/list/download through real Worker and persistent backend');
 
   for (const mode of ['harmony', 'rhythm']) {
     const response = await fetch(`${origin}/api/render`, {

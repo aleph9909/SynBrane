@@ -11,6 +11,9 @@ const {
   resolveCustomChordDegrees,
 } = require('./tuning/tuningService');
 const { renderToFile, playRealtime } = require('./audio');
+const { createPatchStore } = require('./patches/store');
+const { patchRoutes } = require('./patches/routes');
+const handlePatches = patchRoutes(createPatchStore({ directory: config.patchesDir }));
 
 const publicDir = path.join(process.cwd(), 'public');
 
@@ -316,6 +319,8 @@ const server = http.createServer(async (req, res) => {
     res.end();
     return;
   }
+
+  if (await handlePatches(req, res, parsedUrl)) return;
 
   if (parsedUrl.pathname.startsWith('/api/tunings') && req.method === 'GET') {
     handleTunings(req, res);

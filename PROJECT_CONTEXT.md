@@ -139,3 +139,25 @@ Chord-level `arp` objects remain in saved patches for backward compatibility, bu
 ### Frontend UI verification
 
 Run `npm ci`, `npx playwright install chromium`, then `npm run test:ui`. The browser suite starts its own local Node backend, uses temporary render storage, and checks defaults/mode overrides, 1–4 chord scheduling, audio-clock markers, patch compatibility, 320–1280px layouts, and a real Node DSP WAV including seek/pause/replay. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to an existing Chromium executable if needed; `TEST_UI_PORT` defaults to 13002. No deployed service is used.
+
+## Community patch library
+
+`public/patch-library.js` adds a modal browser opened from Patch library / Share
+patch beside local Save/Load below the spiral. Users publish the current v1 patch
+or upload a saved JSON file, with a public name and optional artist alias. They
+can browse paginated summaries, load without autoplay, and download the original
+patch format. Loading prefetches tuning presets to preserve custom note choices.
+The modal does not change the instrument's central spiral layout.
+
+`server/patches/store.js` validates/reconstructs the v1 schema and persists JSON
+records using server-generated IDs and atomic writes. `server/patches/routes.js`
+provides `GET/POST /api/patches` and `GET /api/patches/<id>`; the Worker proxies
+these routes to the existing backend. `PATCHES_DIR` defaults to
+`~/.synbrane/patches`, outside the checkout. Deploy/restart the Node backend before
+the Worker frontend; the legacy Vercel functions have no patch repository route.
+Use one backend writer, consistent service-account storage, and disk backups.
+Uploads are public and immutable; artist labels are unverified. No accounts or
+public deletion endpoint are provided. Operators moderate by removing the exact
+record file. Limits: 16 KiB, 20 attempts/minute globally, 100 patches/hour,
+1,000 records; disk-based hourly/capacity limits survive restart. See README for
+setup, API responses, operational details, and the temporary-storage test suite.
