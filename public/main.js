@@ -44,7 +44,11 @@ const cutoffInput = document.getElementById('cutoff');
 const cutoffLabel = document.getElementById('cutoffLabel');
 const resonanceInput = document.getElementById('resonance');
 const resonanceLabel = document.getElementById('resonanceLabel');
-const globalArpEnabled = document.getElementById('globalArpEnabled');
+const arpMode = document.getElementById('arpMode');
+const chordMode = document.getElementById('chordMode');
+const arpSettings = document.getElementById('arpSettings');
+const nowPlaying = document.getElementById('nowPlaying');
+const legacyChordCount = document.getElementById('legacyChordCount');
 const globalArpPattern = document.getElementById('globalArpPattern');
 const globalArpRate = document.getElementById('globalArpRate');
 const playLoopBtn = document.getElementById('playLoop');
@@ -101,12 +105,11 @@ function defaultChord() {
 }
 
 function resolveArpeggio(chord) {
-  const globalArp = { ...defaultArp(), ...(state.globalArp || {}) };
-  if (globalArp.enabled) return globalArp;
-  if (chord?.arp?.enabled) return { ...defaultArp(), ...chord.arp };
-  return globalArp;
+  // An explicit global CHORD selection must override legacy per-chord arp flags.
+  return { ...defaultArp(), ...(state.globalArp ?? chord?.arp ?? {}) };
 }
 
+// Retain the fifth slot for existing patches; fresh controls offer 1–4.
 const MAX_CHORDS = 5;
 
 const state = {
@@ -121,8 +124,13 @@ const state = {
   bpm: 120,
   rhythmSpeed: 0.3,
   synth: JSON.parse(JSON.stringify(defaultSynth)),
-  globalArp: defaultArp(),
+  globalArp: { ...defaultArp(), enabled: true },
   preview: { arpeggiate: false, arpRateMs: 180, loop: false },
+  playback: null,
+  playbackFrame: null,
+  playingChord: null,
+  renderedLoop: null,
+  renderRequest: 0,
   loopPreview: { ctx: null, timer: null, stop: false, nodes: [], noiseBuffer: null, masterGain: null },
 };
 
@@ -144,8 +152,9 @@ function clampVolume(value) {
 
 function syncGlobalArpToggle(enabled) {
   const active = Boolean(enabled);
-  globalArpEnabled.checked = active;
-  globalArpEnabled.setAttribute('aria-checked', String(active));
+  arpMode.checked = state.mode === 'harmony' && active;
+  chordMode.checked = state.mode === 'harmony' && !active;
+  arpSettings.hidden = !active || state.mode === 'rhythm';
 }
 
 function coercePresetId(presetId) {
@@ -165,6 +174,10 @@ function waveformToOscType(waveform) {
 
 function updateStatus(text) {
   statusEl.textContent = text || '';
+}
+
+function defaultTuningId() {
+  return state.tunings.find(isTwelveEdo)?.id || state.tunings[0]?.id || null;
 }
 
 function getTuning(id) {
@@ -327,9 +340,13 @@ function renderChordSwitcher() {
   if (state.activeChord >= visibleChords) {
     state.activeChord = visibleChords - 1;
   }
+  chordSwitcher.style.setProperty('--chord-count', visibleChords);
+  legacyChordCount.hidden = state.loopChordCount !== 5;
   state.chords.slice(0, visibleChords).forEach((_, idx) => {
     const btn = document.createElement('button');
-    btn.textContent = idx + 1;
+    btn.textContent = `Chord ${idx + 1}`;
+    btn.dataset.chordIndex = idx;
+    btn.setAttribute('aria-pressed', String(idx === state.activeChord));
     btn.className = idx === state.activeChord ? 'active' : '';
     btn.onclick = () => {
       state.activeChord = idx;
@@ -337,6 +354,7 @@ function renderChordSwitcher() {
     };
     chordSwitcher.appendChild(btn);
   });
+  paintPlayingChord();
 }
 
 function renderTuningOptions() {
@@ -344,7 +362,7 @@ function renderTuningOptions() {
   state.tunings.forEach((t) => {
     const opt = document.createElement('option');
     opt.value = t.id;
-    opt.textContent = t.label;
+    opt.textContent = isTwelveEdo(t) ? '12-EDO · Chromatic' : t.label;
     chordTuning.appendChild(opt);
   });
 }
@@ -477,6 +495,7 @@ function spiralThemeForTuning(tuning) {
 function setPointState(point, isActive) {
   if (!point) return;
   point.classList.toggle('active', isActive);
+  point.setAttribute('aria-pressed', String(isActive));
   point.classList.toggle('muted', !isActive);
 }
 
@@ -496,7 +515,7 @@ function calculateSpiralSize(span) {
   const preferredBase = span >= 28 ? 420 : span >= 22 ? 380 : 340;
   const preferredSize = preferredBase * densityBoost;
   const wrapSize = noteCircle.parentElement?.clientWidth || preferredSize;
-  const circleSize = Math.max(300, Math.min(preferredSize, wrapSize - 8));
+  const circleSize = Math.max(180, Math.min(preferredSize, wrapSize - 8));
   return { pointSize, circleSize };
 }
 
@@ -532,7 +551,8 @@ function buildSpiral(tuning) {
     const degreeInOctave = j % span;
     const degreeIndex = octaveIndex * span + degreeInOctave;
     const palette = octaveColor(tuning, octaveIndex);
-    const point = document.createElement('div');
+    const point = document.createElement('button');
+    point.type = 'button';
     point.className = 'note-point muted';
     point.dataset.degreeIndex = degreeIndex;
     point.style.width = `${pointSize}px`;
@@ -548,6 +568,7 @@ function buildSpiral(tuning) {
     point.style.setProperty('--bubble-outline', palette.outline);
     point.style.setProperty('--note-transform', `translate(${x}px, ${y}px) translate(-50%, -50%)`);
     point.title = `Degree ${degreeInOctave} (oct +${octaveIndex})`;
+    point.setAttribute('aria-label', point.title);
     point.textContent = degreeLabel(tuning, degreeInOctave, chord.root || 0);
     point.onclick = () => {
       const activeChord = state.chords[state.activeChord];
@@ -657,10 +678,10 @@ function renderActiveChord() {
   renderChordSwitcher();
   const chord = normalizeChordNotes(state.chords[state.activeChord]);
   if (!chord.tuningId && state.tunings[0]) {
-    chord.tuningId = state.tunings[0].id;
+    chord.tuningId = defaultTuningId();
   }
   if (chord.root == null) chord.root = 0;
-  chordLabel.textContent = `Chord ${state.activeChord + 1}`;
+  chordLabel.textContent = `Editing chord ${state.activeChord + 1}`;
   chordTuning.value = chord.tuningId || '';
   renderPresetOptions();
   renderRootOptions();
@@ -691,6 +712,18 @@ function syncSynthLabels() {
 }
 
 function attachControlListeners() {
+  const editorGrid = document.getElementById('editorGrid');
+  const editorButtons = [document.getElementById('showChordSettings'), document.getElementById('showSynthSettings')];
+  editorButtons.forEach((button, index) => {
+    button.onclick = () => {
+      editorGrid.dataset.editor = index === 0 ? 'chord' : 'synth';
+      editorButtons.forEach((item) => {
+        item.classList.toggle('active', item === button);
+        item.setAttribute('aria-pressed', String(item === button));
+      });
+      renderCircle();
+    };
+  });
   chordTuning.onchange = (e) => {
     const chord = state.chords[state.activeChord];
     chord.tuningId = e.target.value;
@@ -736,11 +769,13 @@ function attachControlListeners() {
   };
 
   loopChordCountInput.onchange = (e) => {
+    const restart = state.playback?.kind === 'loop';
+    stopPreview();
     const value = clampLoopChordCount(e.target.value);
     state.loopChordCount = value;
     loopChordCountInput.value = state.loopChordCount;
-    renderChordSwitcher();
     renderActiveChord();
+    if (restart) playLoop();
   };
 
   clearChordBtn.onclick = () => {
@@ -753,7 +788,9 @@ function attachControlListeners() {
   copyChordBtn.onclick = copyActiveChordToNext;
 
     modeSelect.onchange = (e) => {
+      stopPreview();
       state.mode = e.target.value;
+      syncGlobalArpToggle(state.globalArp.enabled);
     };
 
     bpmInput.oninput = (e) => {
@@ -806,10 +843,17 @@ function attachControlListeners() {
     syncPreviewVolume();
   };
 
-  globalArpEnabled.onchange = (e) => {
-    state.globalArp.enabled = e.target.checked;
-    syncGlobalArpToggle(state.globalArp.enabled);
-  };
+  function selectPlayMode(enabled) {
+    const restart = state.playback?.kind === 'loop';
+    stopPreview();
+    state.mode = 'harmony';
+    modeSelect.value = state.mode;
+    state.globalArp.enabled = enabled;
+    syncGlobalArpToggle(enabled);
+    if (restart) playLoop();
+  }
+  arpMode.onchange = () => selectPlayMode(true);
+  chordMode.onchange = () => selectPlayMode(false);
 
   globalArpPattern.onchange = (e) => {
     state.globalArp.pattern = e.target.value;
@@ -818,6 +862,18 @@ function attachControlListeners() {
   globalArpRate.onchange = (e) => {
     state.globalArp.rate = e.target.value;
   };
+
+  player.addEventListener('play', () => {
+    stopPreview(undefined, { pausePlayer: false });
+    if (state.renderedLoop) {
+      state.playback = { ...state.renderedLoop, kind: 'render' };
+      trackPlayback();
+    }
+  });
+  ['pause', 'ended'].forEach((event) => player.addEventListener(event, () => {
+    if (state.playback?.kind === 'render') stopPreview(undefined, { pausePlayer: false });
+  }));
+  player.addEventListener('seeking', updatePlaybackIndicator);
 
   playLoopBtn.onclick = () => playLoop();
   renderLoopBtn.onclick = () => renderLoop();
@@ -1258,13 +1314,9 @@ function scheduleChordPreview(chord, startTime, durationSec, { mode, synthSettin
       });
 
       updateStatus(`Previewing chord ${index + 1}`);
-      state.loopPreview.timer = setTimeout(() => {
-        if (state.preview.loop) {
-          playChord(index);
-        } else {
-          stopPreview('Preview ended');
-        }
-      }, (total + 0.2) * 1000);
+      state.playback = { kind: 'chord', chordIndex: index, chordCount: 1, startTime,
+        barDuration: sustainDuration, totalBars: 1, endTime: total + 0.15 };
+      trackPlayback();
 
       state.rhythmSpeed = clampRhythmSpeed(state.rhythmSpeed);
     } catch (error) {
@@ -1291,6 +1343,72 @@ function scheduleChordPreview(chord, startTime, durationSec, { mode, synthSettin
       loopChordCount: sequence.length,
     };
   }
+
+// Use the playback clock, not wall-clock timeouts, so tab throttling and audio
+// suspension cannot advance the visible chord independently of the sound.
+function paintPlayingChord() {
+  chordSwitcher.querySelectorAll('button').forEach((button) => {
+    const playing = Number(button.dataset.chordIndex) === state.playingChord;
+    button.classList.toggle('playing', playing);
+    button.setAttribute('aria-label', `Edit chord ${Number(button.dataset.chordIndex) + 1}${playing ? ', now playing' : ''}`);
+  });
+}
+
+function updatePlaybackIndicator() {
+  const playback = state.playback;
+  let index = null;
+  let label = 'Ready to play';
+  if (playback) {
+    const elapsed = playback.kind === 'render'
+      ? player.currentTime
+      : state.loopPreview.ctx.currentTime - playback.startTime;
+    if (elapsed >= 0 && elapsed < playback.totalBars * playback.barDuration) {
+      index = playback.kind === 'chord' ? playback.chordIndex : Math.floor(elapsed / playback.barDuration) % playback.chordCount;
+      label = playback.kind === 'chord'
+        ? `Preview · Chord ${index + 1}`
+        : `${playback.kind === 'render' ? 'WAV' : 'Playing'} · Chord ${index + 1} of ${playback.chordCount}`;
+    } else {
+      label = elapsed < 0 ? 'Starting…' : 'Releasing…';
+    }
+    if (playback.kind !== 'render' && elapsed >= playback.endTime) {
+      if (playback.kind === 'chord' && state.preview.loop) playChord(playback.chordIndex);
+      else stopPreview('Playback finished');
+      return;
+    }
+  }
+  if (state.playingChord !== index) {
+    state.playingChord = index;
+    paintPlayingChord();
+  }
+  if (nowPlaying.textContent !== label) nowPlaying.textContent = label;
+  nowPlaying.classList.toggle('is-playing', index !== null);
+}
+
+function trackPlayback() {
+  // Keep single-chord repeats/completion working when animation frames pause in
+  // a background tab. Check the audio clock again if the AudioContext suspended.
+  const playback = state.playback;
+  if (state.loopPreview.timer) clearTimeout(state.loopPreview.timer);
+  if (playback && playback.kind !== 'render') {
+    const checkEnd = () => {
+      if (state.playback !== playback) return;
+      updatePlaybackIndicator();
+      if (state.playback === playback) {
+        const remaining = playback.startTime + playback.endTime - state.loopPreview.ctx.currentTime;
+        state.loopPreview.timer = setTimeout(checkEnd, Math.max(50, remaining * 1000));
+      }
+    };
+    const remaining = playback.startTime + playback.endTime - state.loopPreview.ctx.currentTime;
+    state.loopPreview.timer = setTimeout(checkEnd, Math.max(50, remaining * 1000));
+  }
+  if (state.playbackFrame != null) cancelAnimationFrame(state.playbackFrame);
+  const tick = () => {
+    state.playbackFrame = null;
+    updatePlaybackIndicator();
+    if (state.playback && state.playbackFrame == null) state.playbackFrame = requestAnimationFrame(tick);
+  };
+  state.playbackFrame = requestAnimationFrame(tick);
+}
 
 async function playLoop() {
   try {
@@ -1330,10 +1448,9 @@ async function playLoop() {
 
     const tail = mode === 'rhythm' ? 0.4 : (synthSettings.envelope?.releaseMs || 0) / 1000;
     const totalDuration = totalBars * barDuration + tail;
-    state.loopPreview.timer = setTimeout(
-      () => stopPreview('Loop preview finished'),
-      (totalDuration + 0.3) * 1000,
-    );
+    state.playback = { kind: 'loop', startTime, barDuration, totalBars,
+      chordCount: sequence.length, endTime: totalDuration + 0.2 };
+    trackPlayback();
     updateStatus(`Loop previewing ${sequence.length} chords × ${loopCount} at ${bpm} BPM`);
   } catch (error) {
     updateStatus(error.message);
@@ -1343,35 +1460,47 @@ async function playLoop() {
 }
 
 async function renderLoop() {
+  stopPreview();
+  const request = ++state.renderRequest;
   try {
     const payload = buildLoopPayload();
+    updateStatus('Rendering WAV…');
     const res = await fetch(apiUrl('/api/render'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     const data = await res.json();
+    if (request !== state.renderRequest) return;
+    if (!res.ok) throw new Error(data.error || 'Render failed');
     if (data.error) throw new Error(data.error);
     if (data.file) {
       player.classList.remove('hidden');
+      state.renderedLoop = { chordCount: payload.sequence.length,
+        barDuration: 240 / payload.bpm, totalBars: payload.sequence.length * payload.loopCount };
       player.src = data.file;
-      player.play();
       updateStatus('Render ready');
+      player.play().catch(() => updateStatus('Render ready — tap the audio player to listen'));
     } else {
       updateStatus('Render complete');
     }
   } catch (error) {
+    if (request !== state.renderRequest) return;
     updateStatus(error.message);
     // eslint-disable-next-line no-console
     console.error(error);
   }
 }
 
-function stopPreview(reason) {
-  if (state.loopPreview.timer) {
-    clearTimeout(state.loopPreview.timer);
-    state.loopPreview.timer = null;
-  }
+function stopPreview(reason, { pausePlayer = true } = {}) {
+  if (state.loopPreview.timer) clearTimeout(state.loopPreview.timer);
+  state.loopPreview.timer = null;
+  state.renderRequest += 1;
+  if (state.playbackFrame != null) cancelAnimationFrame(state.playbackFrame);
+  state.playbackFrame = null;
+  state.playback = null;
+  if (pausePlayer) player.pause();
+  updatePlaybackIndicator();
   state.loopPreview.stop = true;
   if (state.loopPreview.nodes?.length) {
     state.loopPreview.nodes.forEach((node) => {
@@ -1445,12 +1574,13 @@ function savePatch() {
 
 function applyPatch(data) {
   if (!data || typeof data !== 'object') throw new Error('Invalid patch');
+  stopPreview();
   const chords = Array.isArray(data.chords) ? data.chords.slice(0, state.chords.length) : [];
   const loopChordCount = clampLoopChordCount(data.loopChordCount || data.chords?.length || state.loopChordCount);
   state.loopChordCount = loopChordCount;
   chords.forEach((entry, idx) => {
     if (!state.chords[idx]) return;
-    state.chords[idx].tuningId = entry.tuningId || state.tunings[0]?.id || null;
+    state.chords[idx].tuningId = entry.tuningId || defaultTuningId();
     state.chords[idx].notes = Array.isArray(entry.notes) ? entry.notes.map((n) => Number(n)) : [];
     state.chords[idx].root = Number(entry.root ?? state.chords[idx].root ?? 0);
     state.chords[idx].preset = coercePresetId(entry.preset || state.chords[idx].preset || 'major-triad');
@@ -1459,7 +1589,7 @@ function applyPatch(data) {
   });
   for (let idx = chords.length; idx < state.chords.length; idx += 1) {
     state.chords[idx] = defaultChord();
-    state.chords[idx].tuningId = state.tunings[0]?.id || null;
+    state.chords[idx].tuningId = defaultTuningId();
     normalizeChordNotes(state.chords[idx]);
   }
     if (data.global) {
@@ -1497,9 +1627,7 @@ function applyPatch(data) {
   }
   if (!data.global?.arpeggiator) {
     const firstChordArp = chords.find((entry) => entry?.arp?.enabled)?.arp;
-    if (firstChordArp) {
-      state.globalArp = { ...defaultArp(), ...firstChordArp };
-    }
+    state.globalArp = { ...defaultArp(), ...(firstChordArp || {}) };
   }
   modeSelect.value = state.mode;
   bpmInput.value = state.bpm;
@@ -1555,7 +1683,7 @@ async function init() {
   state.tunings = data.tunings || [];
   state.baseFrequency = data.baseFrequency || 440;
   state.chords.forEach((chord) => {
-    chord.tuningId = chord.tuningId || state.tunings[0]?.id || null;
+    chord.tuningId = chord.tuningId || defaultTuningId();
     chord.root = chord.root || 0;
     chord.preset = coercePresetId(chord.preset || 'major-triad');
     normalizeChordNotes(chord);
@@ -1584,4 +1712,8 @@ async function init() {
   updateStatus('Ready');
 }
 
-init();
+window.addEventListener('resize', () => {
+  if (state.tunings.length) renderCircle();
+});
+
+init().catch((error) => updateStatus(`Could not load tunings: ${error.message}`));

@@ -11,13 +11,15 @@
     "deploy:worker": "wrangler deploy",
     "test:worker": "node --test test/worker.test.mjs",
     "check:worker": "wrangler deploy --dry-run",
-    "test:worker:integration": "node test/worker.integration.mjs"
+    "test:worker:integration": "node test/worker.integration.mjs",
+    "test:ui": "node --test test/ui.test.cjs"
   },
   "keywords": ["music", "tuning", "supercollider", "web"],
   "author": "",
   "license": "MIT",
   "dependencies": {},
   "devDependencies": {
+    "playwright": "1.62.1",
     "wrangler": "4.148.0"
   }
 }

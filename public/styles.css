@@ -14,7 +14,13 @@
 body {
   margin: 0;
   padding: 0;
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   background: var(--bg);
   color: var(--text);
 }
@@ -57,7 +63,10 @@ h1 {
   font-size: 13px;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    background 0.2s ease;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
@@ -76,7 +85,8 @@ h1 {
   display: inline-block;
   margin: 0 auto;
   color: var(--accent);
-  font-family: 'Roboto Mono', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+  font-family:
+    "Roboto Mono", "Fira Code", "JetBrains Mono", Consolas, monospace;
   text-shadow: 0 0 8px rgba(90, 200, 250, 0.6);
   line-height: 1.1;
 }
@@ -136,7 +146,7 @@ button {
 }
 
 select,
-input[type='range'] {
+input[type="range"] {
   width: 100%;
 }
 
@@ -218,11 +228,14 @@ button.secondary {
   background: #1f2734;
   border: 1px solid var(--border);
   border-radius: 999px;
-  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .switch .slider::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 3px;
   left: 4px;
@@ -230,7 +243,9 @@ button.secondary {
   height: 18px;
   border-radius: 50%;
   background: #e6ebf5;
-  transition: transform 0.2s ease, background 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    background 0.2s ease;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
@@ -320,7 +335,11 @@ button.secondary {
   align-items: center;
   justify-content: center;
   overflow: visible;
-  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.02), transparent 60%);
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(255, 255, 255, 0.02),
+    transparent 60%
+  );
   --spiral-border: rgba(255, 255, 255, 0.08);
 }
 
@@ -336,8 +355,13 @@ button.secondary {
   justify-content: center;
   color: var(--bubble-text, var(--text));
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease,
-    border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
   font-size: 11px;
   font-weight: 600;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
@@ -361,7 +385,8 @@ button.secondary {
   background: var(--bubble-highlight, var(--accent));
   color: var(--bubble-text-strong, #0d0f13);
   border-color: var(--bubble-outline, var(--accent));
-  box-shadow: 0 0 0 2px var(--bubble-outline, var(--accent)),
+  box-shadow:
+    0 0 0 2px var(--bubble-outline, var(--accent)),
     0 0 16px var(--bubble-glow, rgba(90, 200, 250, 0.5)),
     0 12px 22px rgba(0, 0, 0, 0.55);
   transform: var(--note-transform, translate(0, 0)) translateY(-1px) scale(1.06);
@@ -370,34 +395,36 @@ button.secondary {
 
 .note-point:hover {
   transform: var(--note-transform, translate(0, 0)) translateY(-1px) scale(1.04);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 10px 22px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 10px 22px rgba(0, 0, 0, 0.5);
 }
 
-.note-circle[data-theme='edo-12'] {
+.note-circle[data-theme="edo-12"] {
   --spiral-border: rgba(90, 200, 250, 0.3);
 }
 
-.note-circle[data-theme='edo-19'] {
+.note-circle[data-theme="edo-19"] {
   --spiral-border: rgba(196, 120, 255, 0.35);
 }
 
-.note-circle[data-theme='edo-22'] {
+.note-circle[data-theme="edo-22"] {
   --spiral-border: rgba(255, 196, 96, 0.35);
 }
 
-.note-circle[data-theme='edo-24'] {
+.note-circle[data-theme="edo-24"] {
   --spiral-border: rgba(118, 238, 255, 0.35);
 }
 
-.note-circle[data-theme='edo-31'] {
+.note-circle[data-theme="edo-31"] {
   --spiral-border: rgba(255, 168, 84, 0.35);
 }
 
-.note-circle[data-theme='edo-generic'] {
+.note-circle[data-theme="edo-generic"] {
   --spiral-border: rgba(140, 196, 255, 0.32);
 }
 
-.note-circle[data-theme='scala'] {
+.note-circle[data-theme="scala"] {
   --spiral-border: rgba(92, 214, 140, 0.3);
 }
 
@@ -566,5 +593,393 @@ button.secondary {
   .note-circle {
     width: 300px;
     height: 300px;
+  }
+}
+
+/* Compact instrument: the spiral stays immediately below the performance controls. */
+.instrument-page header {
+  padding: 12px 16px 8px;
+}
+.instrument-page .ascii-banner pre {
+  font-size: clamp(7px, 2vw, 10px);
+}
+.instrument-page .header-subtitle {
+  margin-top: 0;
+}
+.instrument-page .header-actions {
+  position: absolute;
+  right: 16px;
+  bottom: 8px;
+  margin: 0;
+}
+.instrument-page .about-trigger {
+  font-size: 11px;
+}
+.instrument-page main {
+  display: block;
+  max-width: 1000px;
+  margin: auto;
+  padding: 12px;
+}
+.instrument {
+  gap: 12px;
+  padding: 16px;
+  min-width: 0;
+}
+.instrument h3 {
+  font-size: 13px;
+  margin: 0 0 8px;
+  color: var(--subtle);
+  font-weight: 600;
+}
+.instrument label {
+  min-width: 0;
+  font-size: 12px;
+  gap: 4px;
+}
+.instrument select {
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid #394358;
+  background: #10151e;
+  color: var(--text);
+  font-size: 16px;
+}
+.instrument input[type="range"] {
+  height: 44px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.instrument button:not(.note-point),
+.instrument summary {
+  min-height: 44px;
+  touch-action: manipulation;
+}
+.instrument :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.performance-mode {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.performance-mode legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  background: #0d1119;
+  border: 1px solid #394358;
+  padding: 4px;
+  border-radius: 12px;
+}
+.segmented label {
+  position: relative;
+  cursor: pointer;
+}
+.segmented input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.segmented span {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 52px;
+  border-radius: 8px;
+  font-size: 18px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  color: var(--subtle);
+}
+.segmented small {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  margin-top: 2px;
+}
+.segmented input:checked + span {
+  color: #09121a;
+  background: var(--accent);
+}
+.segmented input:focus-visible + span {
+  outline: 2px solid white;
+  outline-offset: 2px;
+}
+.loop-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.loop-length {
+  flex-direction: row;
+  align-items: center;
+}
+.loop-length select {
+  width: 62px;
+}
+.now-playing {
+  margin-left: auto;
+  color: var(--subtle);
+  font-size: 12px;
+  text-align: right;
+}
+.now-playing.is-playing {
+  color: #c2f88a;
+  font-weight: 600;
+}
+.chord-switcher {
+  display: grid;
+  grid-template-columns: repeat(var(--chord-count, 4), minmax(0, 1fr));
+  gap: 6px;
+}
+.chord-switcher button {
+  width: auto;
+  position: relative;
+  padding: 8px 4px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.chord-switcher button.active {
+  background: #203b4c;
+  color: #a6e5ff;
+  border-color: #5ac8fa;
+}
+.chord-switcher button.playing {
+  box-shadow: inset 0 -4px #c2f88a;
+}
+.chord-switcher button.playing::after {
+  content: "▶";
+  color: #c2f88a;
+  margin-left: 5px;
+  font-size: 10px;
+}
+.editor-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.chord-grid {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 8px;
+}
+.wide-control {
+  grid-column: 1 / -1;
+}
+.arp-settings,
+.quick-synth-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.arp-settings {
+  margin-top: 8px;
+}
+.arp-settings[hidden] {
+  display: none;
+}
+.parameter-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+}
+.parameter-label output {
+  color: var(--subtle);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.instrument details {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.instrument summary {
+  padding: 12px 0;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+.instrument summary span {
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--subtle);
+  font-weight: 400;
+}
+.instrument details .control-grid,
+.instrument details .chord-insights {
+  padding: 4px 0 12px;
+}
+.instrument .synth-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+.instrument .synth-grid label {
+  min-width: 0;
+}
+.instrument .loop-controls {
+  display: grid;
+  grid-template-columns: 1.4fr 0.8fr 1fr;
+  gap: 8px;
+}
+.instrument .loop-controls button {
+  padding: 8px;
+  font-size: 13px;
+}
+.instrument .note-circle-wrap {
+  flex-direction: column;
+  padding: 0 0 8px;
+  gap: 12px;
+  min-width: 0;
+}
+.instrument .note-circle {
+  margin-top: 0;
+  flex-shrink: 0;
+}
+.instrument .circle-hint {
+  position: static;
+  font-size: 11px;
+}
+.instrument .note-point {
+  padding: 0;
+  font-family: inherit;
+  touch-action: manipulation;
+}
+.instrument .chord-actions {
+  align-items: center;
+  gap: 6px;
+}
+.instrument .chord-actions button {
+  flex: 1;
+  padding: 8px;
+  font-size: 12px;
+}
+.instrument .repeat-preview {
+  flex-direction: row;
+  align-items: center;
+  min-height: 44px;
+}
+.repeat-preview input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+.instrument .render-preview:has(audio.hidden) {
+  display: none;
+}
+.instrument .render-preview audio {
+  width: 100%;
+}
+.footer-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.footer-controls button {
+  font-size: 12px;
+}
+.footer-controls #status {
+  font-size: 12px;
+  text-align: right;
+}
+
+@media (max-width: 600px) {
+  .instrument-page main {
+    padding: 8px;
+  }
+  .instrument {
+    padding: 12px;
+    gap: 10px;
+  }
+  .editor-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .instrument h3 {
+    margin-bottom: 6px;
+  }
+  .quick-synth-grid {
+    row-gap: 2px;
+  }
+  .instrument .synth-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .instrument .repeat-preview {
+    width: 100%;
+    justify-content: flex-end;
+    min-height: 36px;
+  }
+  .instrument summary span {
+    font-size: 10px;
+    margin-left: 4px;
+  }
+  .instrument .header-actions {
+    right: 8px;
+  }
+  .instrument-page .header-subtitle {
+    text-align: left;
+    font-size: 11px;
+  }
+  .footer-controls {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .footer-controls #status {
+    text-align: left;
+  }
+}
+
+.instrument #loopChordCount {
+  width: 62px;
+}
+.editor-tabs {
+  display: none;
+}
+.quick-synth .synth-details {
+  margin-top: 10px;
+}
+@media (max-width: 600px) {
+  .editor-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .editor-tabs button {
+    background: transparent;
+    color: var(--subtle);
+    border: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .editor-tabs button.active {
+    color: var(--text);
+    background: #252e3d;
+    border-color: #4e6079;
+  }
+  .editor-grid {
+    min-height: 224px;
+  }
+  .editor-grid[data-editor="chord"] .quick-synth,
+  .editor-grid[data-editor="synth"] .chord-settings {
+    display: none;
+  }
+  .loop-heading {
+    gap: 10px;
+  }
+  .now-playing {
+    min-width: 0;
+    line-height: 1.4;
   }
 }
