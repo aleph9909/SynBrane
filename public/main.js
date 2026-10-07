@@ -131,7 +131,7 @@ const state = {
   playingChord: null,
   renderedLoop: null,
   renderRequest: 0,
-  loopPreview: { ctx: null, timer: null, stop: false, nodes: [], noiseBuffer: null, masterGain: null },
+  loopPreview: { ctx: null, timer: null, stop: false, nodes: [], noiseBuffer: null, masterGain: null, mixGain: null, limiter: null, outputGain: null, scheduler: null },
 };
 
 function clampRhythmSpeed(value) {
@@ -950,7 +950,7 @@ function getPreviewContext() {
     return state.loopPreview.ctx;
   }
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  state.loopPreview.ctx = new AudioCtx();
+  state.loopPreview.ctx = new AudioCtx({ latencyHint: 'balanced' });
   state.loopPreview.nodes = [];
   state.loopPreview.stop = false;
   const masterGain = state.loopPreview.ctx.createGain();
@@ -958,7 +958,31 @@ function getPreviewContext() {
   masterGain.gain.setValueAtTime(initialVolume, state.loopPreview.ctx.currentTime);
   masterGain.connect(state.loopPreview.ctx.destination);
   state.loopPreview.masterGain = masterGain;
+  createPreviewMixBus(state.loopPreview.ctx);
   return state.loopPreview.ctx;
+}
+
+function createPreviewMixBus(ctx) {
+  // Leave headroom for overlapping releases. One shared compressor catches
+  // dense chords/drum transients after the user's master-volume boost.
+  const mix = ctx.createGain();
+  mix.gain.value = 0.35;
+  const limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = -6;
+  limiter.knee.value = 0;
+  limiter.ratio.value = 20;
+  limiter.attack.value = 0;
+  limiter.release.value = 0.1;
+  const output = ctx.createGain();
+  output.gain.value = 0.8;
+  mix.connect(state.loopPreview.masterGain);
+  state.loopPreview.masterGain.disconnect();
+  state.loopPreview.masterGain.connect(limiter);
+  limiter.connect(output);
+  output.connect(ctx.destination);
+  state.loopPreview.outputGain = output;
+  state.loopPreview.mixGain = mix;
+  state.loopPreview.limiter = limiter;
 }
 
 function getPreviewDestination() {
@@ -969,7 +993,8 @@ function getPreviewDestination() {
     gain.connect(ctx.destination);
     state.loopPreview.masterGain = gain;
   }
-  return state.loopPreview.masterGain;
+  if (!state.loopPreview.mixGain) createPreviewMixBus(ctx);
+  return state.loopPreview.mixGain;
 }
 
 function syncPreviewVolume() {
@@ -978,18 +1003,28 @@ function syncPreviewVolume() {
   state.loopPreview.masterGain.gain.setTargetAtTime(clamped, state.loopPreview.ctx.currentTime, 0.02);
 }
 
-function trackPreviewNodes(...nodes) {
-  if (!state.loopPreview.nodes) state.loopPreview.nodes = [];
-  nodes.forEach((node) => {
-    if (node) state.loopPreview.nodes.push(node);
-  });
+function trackPreviewVoice(sources, nodes) {
+  const tracked = state.loopPreview.nodes;
+  tracked.push(...nodes);
+  let remaining = sources.length;
+  sources.forEach((source) => source.addEventListener('ended', () => {
+    remaining -= 1;
+    if (remaining) return;
+    // A drum can have multiple sources sharing a gain/filter. Disconnect only
+    // after its last source ends, and never touch a later playback's node list.
+    nodes.forEach((node) => {
+      node.disconnect();
+      const index = tracked.indexOf(node);
+      if (index !== -1) tracked.splice(index, 1);
+    });
+  }, { once: true }));
 }
 
 function applyEnvelope(gainNode, ctx, startTime, durationSec, envelope) {
-  const attack = Math.max(0, (envelope.attackMs || 0) / 1000);
-  const decay = Math.max(0, (envelope.decayMs || 0) / 1000);
+  const attack = Math.min(durationSec, Math.max(0.003, (envelope.attackMs || 0) / 1000));
+  const decay = Math.min(Math.max(0, durationSec - attack), Math.max(0, (envelope.decayMs || 0) / 1000));
   const sustain = Math.max(0, Math.min(1, envelope.sustainLevel ?? 0.7));
-  const release = Math.max(0, (envelope.releaseMs || 0) / 1000);
+  const release = Math.max(0.003, (envelope.releaseMs || 0) / 1000);
 
   gainNode.gain.setValueAtTime(0, startTime);
   gainNode.gain.linearRampToValueAtTime(1, startTime + attack);
@@ -1205,7 +1240,7 @@ function triggerDrum(role, ctx, when, velocity = 1) {
     nodes.push(noise, filter);
   }
 
-  trackPreviewNodes(...nodes);
+  trackPreviewVoice(nodes.filter((node) => typeof node.start === 'function'), nodes);
   return nodes.length ? 0.5 : 0;
 }
 
@@ -1238,7 +1273,7 @@ function scheduleHarmonyPreview(chord, startTime, durationSec, synthSettings, te
   const envelope = synth.envelope || defaultSynth.envelope;
   const filterCfg = synth.filter || {};
   const freqs = chord.notes.map((deg) => degreeToFrequency(chord.tuningId, deg));
-  const chordArp = resolveArpeggio(chord);
+  const chordArp = chord.arpeggio || resolveArpeggio(chord);
   const useArp = chordArp.enabled && freqs.length > 1;
   const orderedFreqs = useArp ? orderFrequenciesForPattern(freqs, chordArp.pattern) : freqs;
   const stepSec = useArp ? stepDurationFromRate(chordArp.rate, tempo || state.bpm) : durationSec;
@@ -1259,6 +1294,7 @@ function scheduleHarmonyPreview(chord, startTime, durationSec, synthSettings, te
     osc.detune.setValueAtTime(detune, startTime);
 
     const gain = ctx.createGain();
+    const nodes = [osc, gain];
     let lastNode = osc;
 
     if (filterCfg.cutoffHz) {
@@ -1269,18 +1305,18 @@ function scheduleHarmonyPreview(chord, startTime, durationSec, synthSettings, te
       filter.Q.setValueAtTime(resonance * 12 + 0.0001, startTime);
       lastNode.connect(filter);
       lastNode = filter;
-      trackPreviewNodes(filter);
+      nodes.push(filter);
     }
 
     const noteStart = startTime + (useArp ? idx * stepSec : 0);
     const totalDuration = applyEnvelope(gain, ctx, noteStart, noteDuration, envelope);
-    gain.gain.setValueAtTime(0.0001, noteStart - 0.01);
+    gain.gain.setValueAtTime(0, Math.max(0, noteStart - 0.01));
     lastNode.connect(gain);
     gain.connect(getPreviewDestination());
 
     osc.start(noteStart);
     osc.stop(noteStart + totalDuration + 0.05);
-    trackPreviewNodes(osc, gain);
+    trackPreviewVoice([osc], nodes);
     lastOffset = useArp ? idx * stepSec + noteDuration : noteDuration;
   }
 
@@ -1425,26 +1461,38 @@ async function playLoop() {
     const startTime = ctx.currentTime + 0.1;
 
     const totalBars = expanded.reduce((max, event) => Math.max(max, (event.bar || 0) + (event.durationBars || 1)), 0);
-    expanded.forEach((event) => {
-      const chordDuration = barDuration * (event.durationBars || 1);
-      const chordStart = startTime + (event.bar || 0) * barDuration;
-      const chord = {
-        tuningId: event.tuningId,
-        root: event.root || 0,
-        notes: event.degrees || event.customChord?.degrees || [],
-        arp: event.arpeggio || {
-          enabled: Boolean(event.arpeggioEnabled),
-          pattern: event.arpeggioPattern || 'up',
-          rate: event.arpeggioRate || '1/8',
-        },
-      };
-      scheduleChordPreview(chord, chordStart, chordDuration, {
-        mode,
-        synthSettings,
-        rhythmSpeed,
-        tempo: bpm,
-      });
-    });
+    const scheduler = { nextIndex: 0, timer: null, pump: null };
+    state.loopPreview.scheduler = scheduler;
+    const pump = () => {
+      if (state.loopPreview.scheduler !== scheduler || state.loopPreview.stop) return;
+      if (scheduler.timer) clearTimeout(scheduler.timer);
+      scheduler.timer = null;
+      // Four seconds tolerates normal main-thread jitter without building all
+      // ten repeats. When hidden, schedule the rest natively before timers are
+      // throttled, preserving background playback behavior.
+      const horizon = document.hidden ? Infinity : ctx.currentTime + 4;
+      while (scheduler.nextIndex < expanded.length) {
+        const event = expanded[scheduler.nextIndex];
+        const chordStart = startTime + (event.bar || 0) * barDuration;
+        if (chordStart > horizon) break;
+        scheduler.nextIndex += 1;
+        // After an unusually long main-thread stall, don't burst missed notes
+        // together. The next bar still uses the original audio-clock timeline.
+        if (chordStart < ctx.currentTime) continue;
+        const chord = {
+          tuningId: event.tuningId,
+          root: event.root || 0,
+          notes: event.degrees || event.customChord?.degrees || [],
+          arpeggio: event.arpeggio,
+        };
+        scheduleChordPreview(chord, chordStart, barDuration * (event.durationBars || 1), {
+          mode, synthSettings, rhythmSpeed, tempo: bpm,
+        });
+      }
+      if (scheduler.nextIndex < expanded.length) scheduler.timer = setTimeout(pump, 100);
+    };
+    scheduler.pump = pump;
+    pump();
 
     const tail = mode === 'rhythm' ? 0.4 : (synthSettings.envelope?.releaseMs || 0) / 1000;
     const totalDuration = totalBars * barDuration + tail;
@@ -1493,6 +1541,8 @@ async function renderLoop() {
 }
 
 function stopPreview(reason, { pausePlayer = true } = {}) {
+  if (state.loopPreview.scheduler?.timer) clearTimeout(state.loopPreview.scheduler.timer);
+  state.loopPreview.scheduler = null;
   if (state.loopPreview.timer) clearTimeout(state.loopPreview.timer);
   state.loopPreview.timer = null;
   state.renderRequest += 1;
@@ -1711,6 +1761,10 @@ async function init() {
   renderActiveChord();
   updateStatus('Ready');
 }
+
+document.addEventListener('visibilitychange', () => {
+  state.loopPreview.scheduler?.pump();
+});
 
 window.addEventListener('resize', () => {
   if (state.tunings.length) renderCircle();

@@ -328,3 +328,91 @@ test('Stop cancels a pending render so a late response cannot restart audio', as
   assert.equal(await page.locator('#player').isVisible(), false);
   assert.equal(await page.locator('#status').textContent(), 'Stopped');
 });
+
+test('preview schedules a small window, retains the sound snapshot, and cancels future work on Stop', async t => {
+  const page = await openPage(t);
+  const initial = await page.evaluate(async () => {
+    const schedule = scheduleChordPreview;
+    window.scheduledBars = [];
+    scheduleChordPreview = (chord, time, duration, options) => {
+      window.scheduledBars.push({ time, duration, arp: { ...chord.arpeggio } });
+      return schedule(chord, time, duration, options);
+    };
+    await playLoop();
+    const result = { nodes: state.loopPreview.nodes.length, queued: state.loopPreview.scheduler.nextIndex, total: state.playback.totalBars };
+    state.globalArp.enabled = false;
+    state.globalArp.pattern = 'down';
+    return result;
+  });
+  assert.deepEqual(initial, { nodes: 48, queued: 2, total: 40 });
+  await page.waitForFunction(() => state.loopPreview.scheduler.nextIndex >= 3);
+  const later = await page.evaluate(() => ({
+    nodes: state.loopPreview.nodes.length,
+    events: window.scheduledBars,
+  }));
+  assert.ok(later.nodes <= 96);
+  assert.equal(later.events.every(event => event.arp.enabled && event.arp.pattern === 'up'), true);
+  assert.ok(Math.abs(later.events[1].time - later.events[0].time - 2) < 1e-9);
+  assert.ok(Math.abs(later.events[2].time - later.events[1].time - 2) < 1e-9);
+  const stopped = await page.evaluate(() => {
+    const pump = state.loopPreview.scheduler.pump;
+    stopPreview();
+    pump();
+    return { scheduler: state.loopPreview.scheduler, nodes: state.loopPreview.nodes.length };
+  });
+  assert.deepEqual(stopped, { scheduler: null, nodes: 0 });
+});
+
+test('background transition queues native audio before browser timers can be throttled', async t => {
+  const page = await openPage(t);
+  const result = await page.evaluate(async () => {
+    await playLoop();
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    const result = { queued: state.loopPreview.scheduler.nextIndex, timer: state.loopPreview.scheduler.timer };
+    delete document.hidden;
+    stopPreview();
+    return result;
+  });
+  assert.deepEqual(result, { queued: 40, timer: null });
+});
+
+test('offline preview stays below full scale and cleans up harmony and shared drum chains', async t => {
+  const page = await openPage(t);
+  const results = await page.evaluate(async () => {
+    const results = [];
+    for (const variant of [
+      { name: 'default arp', volume: 1, arp: true, count: 3, resonance: 0.2 },
+      { name: 'boosted arp', volume: 1.5, arp: true, count: 3, resonance: 0.2 },
+      { name: 'dense chord', volume: 1.5, arp: false, count: 12, resonance: 1 },
+      { name: 'drums', volume: 1.5, arp: false, count: 3, resonance: 0.2, mode: 'rhythm' },
+    ]) {
+      const ctx = new OfflineAudioContext(1, 44100 * 5, 44100);
+      getPreviewContext = () => ctx;
+      Object.assign(state.loopPreview, { ctx, masterGain: null, mixGain: null, limiter: null, outputGain: null, noiseBuffer: null, stop: false, nodes: [] });
+      state.synth.volume = variant.volume;
+      state.synth.filter.resonance = variant.resonance;
+      state.globalArp.enabled = variant.arp;
+      const chord = { ...state.chords[0], notes: variant.count === 3 ? [0, 4, 7] : Array.from({ length: variant.count }, (_, i) => i) };
+      for (let i = 0; i < 2; i++) scheduleChordPreview(chord, 0.1 + i * 2, 2, {
+        mode: variant.mode || 'harmony', synthSettings: state.synth, rhythmSpeed: 0.3, tempo: 120,
+      });
+      const buffer = await ctx.startRendering();
+      let peak = 0, clipped = 0;
+      for (const sample of buffer.getChannelData(0)) {
+        if (!Number.isFinite(sample)) throw new Error('Non-finite audio sample');
+        peak = Math.max(peak, Math.abs(sample));
+        if (Math.abs(sample) > 1) clipped++;
+      }
+      // Source ended events are dispatched separately from rendering completion.
+      await new Promise(resolve => setTimeout(resolve, 0));
+      results.push({ name: variant.name, peak, clipped, retainedNodes: state.loopPreview.nodes.length });
+    }
+    return results;
+  });
+  for (const result of results) {
+    assert.equal(result.clipped, 0, `${result.name}: peak ${result.peak}`);
+    assert.ok(result.peak > 0.01, `${result.name} must not be silent`);
+    assert.equal(result.retainedNodes, 0, result.name);
+  }
+});
